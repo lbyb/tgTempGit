@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>豆瓣丛书 → AA 合并搜索</title>
+  </head>
+  <body>
+    <div id="app"><div style="padding:20px;font-family:monospace;color:#666;">加载中...</div></div>
+    <script>
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          var el = document.getElementById('app');
+          if (el && el.innerHTML.indexOf('加载中') !== -1) {
+            el.innerHTML = '<div style="color:red;padding:20px;font-family:monospace;">'
+              + '<h3>前端加载失败</h3>'
+              + '<p>请打开浏览器开发者工具(F12) → Console 和 Network 面板查看错误详情</p>'
+              + '<p>常见原因：JS文件404、浏览器不支持ES模块、网络问题</p>'
+              + '</div>';
+          }
+        }, 3000);
+      });
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

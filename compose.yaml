@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    ports:
+      - "24518:24518"
+    restart: unless-stopped
+    init: true

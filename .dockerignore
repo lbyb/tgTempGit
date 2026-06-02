@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docs & Config (非运行时文件)
+AGENTS.md
+README.md
+.opencode/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend build artifacts (will be built fresh)
+frontend/node_modules/
+frontend/dist/
+
+# Docker & CI
+run.sh
