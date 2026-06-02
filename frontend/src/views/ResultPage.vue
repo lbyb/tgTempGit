@@ -14,54 +14,6 @@ const history = ref<HistoryEntry[]>([])
 const selectedTaskId = ref(props.taskId)
 
 onMounted(async () => {
-  window.getRowMainLink = (row: Element): HTMLAnchorElement | null => {
-    const img = row.querySelector("img")
-    return img ? img.closest("a") : null
-  }
-  window.copyTextWithFallback = async (text: string, okMsg: string): Promise<void> => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const ta = document.createElement("textarea")
-        ta.value = text
-        ta.setAttribute("readonly", "")
-        ta.style.position = "absolute"
-        ta.style.left = "-9999px"
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand("copy")
-        document.body.removeChild(ta)
-      }
-      alert(okMsg)
-    } catch {
-      alert(okMsg + "（兼容模式）")
-    }
-  }
-  window.copySelected = (): void => {
-    const boxes = document.querySelectorAll<HTMLInputElement>(".select-item:checked")
-    const lines: string[] = []
-    boxes.forEach((cb) => {
-      const row = cb.closest("tr")
-      if (!row) return
-      const link = window.getRowMainLink(row)
-      if (!link) return
-      let abs = ""
-      try {
-        abs = new URL(link.getAttribute("href") || "", document.baseURI).href
-      } catch {
-        abs = link.href
-      }
-      const fname = cb.dataset.filename || ""
-      lines.push(abs + " |" + fname)
-    })
-    if (lines.length === 0) {
-      alert("请先勾选要复制的条目")
-      return
-    }
-    window.copyTextWithFallback(lines.join("\n"), "已复制 " + lines.length + " 项")
-  }
-
   const queryHtml = route.query.html as string | undefined
   if (queryHtml) {
     htmlContent.value = queryHtml
@@ -109,6 +61,40 @@ function onSwitchHistory(): void {
   }
 }
 
+async function onCopySelected(): Promise<void> {
+  const boxes = document.querySelectorAll<HTMLInputElement>(".select-item:checked")
+  const lines: string[] = []
+  boxes.forEach((cb) => {
+    const href = cb.dataset.href || ""
+    if (!href) return
+    const fname = cb.dataset.filename || ""
+    lines.push(href + " |" + fname)
+  })
+  if (lines.length === 0) {
+    alert("请先勾选要复制的条目")
+    return
+  }
+  const text = lines.join("\n")
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement("textarea")
+      ta.value = text
+      ta.setAttribute("readonly", "")
+      ta.style.position = "absolute"
+      ta.style.left = "-9999px"
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand("copy")
+      document.body.removeChild(ta)
+    }
+    alert("已复制 " + lines.length + " 项")
+  } catch {
+    alert("已复制 " + lines.length + " 项（兼容模式）")
+  }
+}
+
 async function onClearHistory(): Promise<void> {
   try {
     await clearHistory()
@@ -136,12 +122,14 @@ function formatLabel(entry: HistoryEntry): string {
   </div>
 
   <template v-else>
-    <div class="history-toolbar" v-if="history.length > 0">
-      <select v-model="selectedTaskId" @change="onSwitchHistory" class="history-select">
+    <div class="history-toolbar" v-if="htmlContent || history.length > 0">
+      <select v-model="selectedTaskId" @change="onSwitchHistory" class="history-select" v-if="history.length > 0">
         <option v-for="entry in history" :key="entry.task_id" :value="entry.task_id">
           {{ formatLabel(entry) }}
         </option>
       </select>
+      <button class="copy-btn" @click="onCopySelected">复制选中链接</button>
+      <span class="copy-hint">（勾选后点击复制，每行格式：链接 | 文件名）</span>
       <button class="clear-btn" @click="onClearHistory">清除历史</button>
     </div>
 
@@ -214,5 +202,20 @@ function formatLabel(entry: HistoryEntry): string {
 .clear-btn:hover {
   background: #e74c3c;
   color: #fff;
+}
+.copy-btn {
+  padding: 8px 14px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #f6f8fa;
+  cursor: pointer;
+  font-size: 14px;
+}
+.copy-btn:hover {
+  background: #eef1f4;
+}
+.copy-hint {
+  font-size: 12px;
+  color: #666;
 }
 </style>

@@ -88,8 +88,6 @@ def strip_non_image_hrefs(root: BeautifulSoup) -> None:
     for a in root.find_all("a", href=True):
         if a.find("img"):
             a["target"] = "_blank"
-        else:
-            del a["href"]
 
 
 def inject_checkboxes_and_headers(
@@ -104,10 +102,22 @@ def inject_checkboxes_and_headers(
     rows = record_div.select("tr")
     processed_tables = set()
     for idx, row in enumerate(rows):
+        img_href = ""
+        img = row.find("img")
+        if img:
+            parent_a = img.find_parent("a", href=True)
+            if parent_a:
+                img_href = parent_a.get("href", "")
+        if not img_href:
+            any_a = row.find("a", href=True)
+            if any_a:
+                img_href = any_a.get("href", "")
+
         td = soup.new_tag("td", **{"class": "aa-select-cell"})
         cb_attrs = {
             "class": "select-item",
             "data-filename": file_label,
+            "data-href": img_href,
         }
         if check_first and idx == 0:
             cb_attrs["checked"] = "checked"
@@ -154,7 +164,7 @@ def build_aa_page_by_isbns(
 
     for ind, key in enumerate(isbns):
         time.sleep(__import__("random").uniform(0.5, 0.8))
-        print(f"\r{ind+1}", end="", flush=True)
+        print(f"AA搜索进度: {ind+1}/{len(isbns)}")
         soup, head_links, record_div = fetch_one_isbn_block(key)
 
         if css_js_links is None:
