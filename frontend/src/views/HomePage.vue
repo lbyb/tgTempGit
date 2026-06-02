@@ -1,14 +1,31 @@
 <script setup lang="ts">
-import { ref } from "vue"
-import { useRouter } from "vue-router"
-import { createSearch } from "@/api"
+import { ref, onMounted } from "vue"
+import { useRouter, useRoute } from "vue-router"
+import { createSearch, setToken } from "@/api"
 
 const router = useRouter()
+const route = useRoute()
 
 const seriesUrl = ref("")
 const isbns = ref("9787101066890,9787807454908")
 const loading = ref(false)
 const error = ref("")
+
+onMounted(() => {
+  const qToken = route.query.token
+  if (typeof qToken === "string" && qToken) {
+    setToken(qToken)
+  }
+  const qSeries = route.query.series
+  const qIsbn = route.query.isbn
+  if (typeof qSeries === "string" && qSeries) {
+    seriesUrl.value = qSeries
+    onSubmit()
+  } else if (typeof qIsbn === "string" && qIsbn) {
+    isbns.value = qIsbn
+    onSubmit()
+  }
+})
 
 async function onSubmit(): Promise<void> {
   error.value = ""

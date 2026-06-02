@@ -1,7 +1,8 @@
 import re
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from backend.dependencies import verify_token
 from backend.models.schemas import SearchRequest, SearchResponse
 from backend.services.task_manager import (
     submit_series_task,
@@ -17,7 +18,7 @@ router = APIRouter(tags=["search"])
 
 
 @router.post("/api/search", response_model=SearchResponse)
-def create_search(body: SearchRequest) -> JSONResponse:
+def create_search(body: SearchRequest, _: None = Depends(verify_token)) -> JSONResponse:
     if body.series_url:
         series_urls = []
         for url in body.series_url.split(","):

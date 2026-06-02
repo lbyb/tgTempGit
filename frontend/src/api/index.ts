@@ -35,31 +35,49 @@ export interface HistoryEntry {
 
 const BASE = "/api"
 
+let _token = ""
+
+export function setToken(t: string): void {
+  _token = t
+}
+
+export function getToken(): string {
+  return _token
+}
+
+function headers(extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { ...extra }
+  if (_token) {
+    h["X-Token"] = _token
+  }
+  return h
+}
+
 export async function createSearch(data: SearchRequest): Promise<SearchResponse> {
   const res = await fetch(`${BASE}/search`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   })
   return res.json()
 }
 
 export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
-  const res = await fetch(`${BASE}/task/${taskId}`)
+  const res = await fetch(`${BASE}/task/${taskId}`, { headers: headers() })
   return res.json()
 }
 
 export async function getTaskResult(taskId: string): Promise<TaskResult> {
-  const res = await fetch(`${BASE}/result/${taskId}`)
+  const res = await fetch(`${BASE}/result/${taskId}`, { headers: headers() })
   return res.json()
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {
-  const res = await fetch(`${BASE}/history`)
+  const res = await fetch(`${BASE}/history`, { headers: headers() })
   return res.json()
 }
 
 export async function clearHistory(): Promise<{ cleared: number }> {
-  const res = await fetch(`${BASE}/history`, { method: "DELETE" })
+  const res = await fetch(`${BASE}/history`, { method: "DELETE", headers: headers() })
   return res.json()
 }

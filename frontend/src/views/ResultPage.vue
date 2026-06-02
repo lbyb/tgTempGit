@@ -14,6 +14,54 @@ const history = ref<HistoryEntry[]>([])
 const selectedTaskId = ref(props.taskId)
 
 onMounted(async () => {
+  window.getRowMainLink = (row: Element): HTMLAnchorElement | null => {
+    const img = row.querySelector("img")
+    return img ? img.closest("a") : null
+  }
+  window.copyTextWithFallback = async (text: string, okMsg: string): Promise<void> => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement("textarea")
+        ta.value = text
+        ta.setAttribute("readonly", "")
+        ta.style.position = "absolute"
+        ta.style.left = "-9999px"
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand("copy")
+        document.body.removeChild(ta)
+      }
+      alert(okMsg)
+    } catch {
+      alert(okMsg + "（兼容模式）")
+    }
+  }
+  window.copySelected = (): void => {
+    const boxes = document.querySelectorAll<HTMLInputElement>(".select-item:checked")
+    const lines: string[] = []
+    boxes.forEach((cb) => {
+      const row = cb.closest("tr")
+      if (!row) return
+      const link = window.getRowMainLink(row)
+      if (!link) return
+      let abs = ""
+      try {
+        abs = new URL(link.getAttribute("href") || "", document.baseURI).href
+      } catch {
+        abs = link.href
+      }
+      const fname = cb.dataset.filename || ""
+      lines.push(abs + " |" + fname)
+    })
+    if (lines.length === 0) {
+      alert("请先勾选要复制的条目")
+      return
+    }
+    window.copyTextWithFallback(lines.join("\n"), "已复制 " + lines.length + " 项")
+  }
+
   const queryHtml = route.query.html as string | undefined
   if (queryHtml) {
     htmlContent.value = queryHtml
@@ -62,7 +110,6 @@ function onSwitchHistory(): void {
 }
 
 async function onClearHistory(): Promise<void> {
-  if (!confirm("确定要清除所有历史记录吗？此操作不可恢复。")) return
   try {
     await clearHistory()
     history.value = []

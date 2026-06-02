@@ -1,6 +1,11 @@
 import { createApp } from "vue"
 import App from "./App.vue"
 import router from "./router"
+import { setToken } from "./api"
+
+const urlParams = new URLSearchParams(window.location.search)
+const tokenFromUrl = urlParams.get("token")
+setToken(tokenFromUrl || import.meta.env.VITE_APP_TOKEN || "")
 
 try {
   const app = createApp(App)

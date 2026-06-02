@@ -3,6 +3,8 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci 2>/dev/null || npm install
+ARG VITE_APP_TOKEN
+ENV VITE_APP_TOKEN=$VITE_APP_TOKEN
 COPY frontend/ ./
 RUN npm run build
 

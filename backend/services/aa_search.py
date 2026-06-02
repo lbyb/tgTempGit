@@ -72,9 +72,24 @@ def fetch_one_isbn_block(q: str) -> Tuple[Optional[BeautifulSoup], str, Optional
         if attempt < MAX_RETRIES:
             time.sleep(RETRY_DELAY * attempt)
 
-    head_links = "".join(str(tag) for tag in soup.head.find_all(["link", "script"])) if soup and soup.head else ""
+    head_links = ""
+    if soup and soup.head:
+        for tag in soup.head.find_all(["link", "script"]):
+            if tag.name == "link" and tag.get("href") and tag["href"].startswith("/"):
+                tag["href"] = origin + tag["href"]
+            if tag.name == "script" and tag.get("src") and tag["src"].startswith("/"):
+                tag["src"] = origin + tag["src"]
+            head_links += str(tag)
     record_div = soup.find("div", class_="js-aarecord-list-outer") if soup else None
     return soup, head_links, record_div
+
+
+def strip_non_image_hrefs(root: BeautifulSoup) -> None:
+    for a in root.find_all("a", href=True):
+        if a.find("img"):
+            a["target"] = "_blank"
+        else:
+            del a["href"]
 
 
 def inject_checkboxes_and_headers(
@@ -152,6 +167,7 @@ def build_aa_page_by_isbns(
         absolutize_urls(record_div, origin)
         file_label = (filename_map or {}).get(key) or f"{key}.pdf"
         inject_checkboxes_and_headers(soup, record_div, file_label, check_first=True)
+        strip_non_image_hrefs(record_div)
 
         wrapper = soup.new_tag("div", **{"class": "js-aarecord-list-outer"})
         title = soup.new_tag("h2")
@@ -166,6 +182,7 @@ def build_aa_page_by_isbns(
                 inject_checkboxes_and_headers(soup, element, file_label)
             else:
                 inject_checkboxes_and_headers(soup, element, file_label, check_first=True)
+            strip_non_image_hrefs(element)
             wrapper.append(element)
 
         results_html.append(separator_html)
@@ -182,7 +199,6 @@ def render_results_page(results_blocks_html: list[str], css_js_links: str, origi
 <head>
 <meta charset="UTF-8">
 <title>合并搜索结果</title>
-<base href="{origin}/" target="_blank">
 {css_js_links or ""}
 <style>
   .aa-page {{ max-width: 1200px; margin: 0 auto; padding: 12px; }}
@@ -194,52 +210,12 @@ def render_results_page(results_blocks_html: list[str], css_js_links: str, origi
   .aa-result-block {{ margin: 14px 0; }}
   .aa-hint {{ font-size: 12px; color: #666; }}
 </style>
-<script>
-function getRowMainLink(row) {{
-  return row.querySelector('a[href*="/md5/"]') || row.querySelector('a[href]');
-}}
-async function copyTextWithFallback(text, okMsg) {{
-  try {{
-    if (navigator.clipboard && window.isSecureContext) {{
-      await navigator.clipboard.writeText(text);
-    }} else {{
-      const ta = document.createElement('textarea');
-      ta.value = text; ta.setAttribute('readonly','');
-      ta.style.position='absolute'; ta.style.left='-9999px';
-      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-      document.body.removeChild(ta);
-    }}
-    alert(okMsg);
-  }} catch (e) {{
-    alert(okMsg + '（兼容模式）');
-  }}
-}}
-function copySelected() {{
-  const boxes = document.querySelectorAll('.select-item:checked');
-  const lines = [];
-  boxes.forEach(cb => {{
-    const row = cb.closest('tr');
-    if (!row) return;
-    const link = getRowMainLink(row);
-    if (!link) return;
-    let abs = '';
-    try {{
-      abs = new URL(link.getAttribute('href'), document.baseURI).href;
-    }} catch (e) {{
-      abs = link.href;
-    }}
-    const fname = cb.dataset.filename || '';
-    lines.push(abs + ' |' + fname);
-  }});
-  copyTextWithFallback(lines.join('\\n'), '已复制 ' + lines.length + ' 项');
-}}
-</script>
 </head>
 <body>
   <div class="aa-page">
     <div class="aa-toolbar">
       <button class="aa-btn" onclick="copySelected()">复制选中链接</button>
-      <span class="aa-hint">（勾选后点击复制，每行格式：链接&&&文件名）</span>
+      <span class="aa-hint">（勾选后点击复制，每行格式：链接 | 文件名）</span>
     </div>
     {"".join(results_blocks_html)}
   </div>

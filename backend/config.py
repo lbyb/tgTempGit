@@ -1,7 +1,10 @@
 import time
+import os
 import requests
 
-LOGIN_URL = "http://www.lbylklin.vip/login"
+LOGIN_URL = "http://www.lbylkylin.vip/login"
+
+SECRET_TOKEN = os.getenv("APP_SECRET_TOKEN", "lby")
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
@@ -38,15 +41,16 @@ RETRY_DELAY = 3
 
 
 def get_aa_origin() -> str:
-    try:
-        response = requests.get(LOGIN_URL, timeout=10)
-    except Exception:
-        time.sleep(30)
-        response = requests.get(LOGIN_URL, timeout=10)
-    hz = response.content.decode("utf-8")
-    if not hz or len(hz) > 3:
-        hz = "li"
-    return f"https://annas-archive.{hz}"
+    for attempt in range(2):
+        try:
+            response = requests.get(LOGIN_URL, timeout=10)
+            hz = response.content.decode("utf-8")
+            if hz and len(hz) <= 3:
+                return f"https://annas-archive.{hz}"
+        except Exception:
+            if attempt == 0:
+                time.sleep(30)
+    return "https://annas-archive.li"
 
 
 def get_aa_base_url() -> str:
