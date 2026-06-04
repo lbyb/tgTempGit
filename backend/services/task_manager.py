@@ -43,13 +43,17 @@ def _process_series_task(task_id: str, series_urls: list[str]) -> None:
                 time.sleep(60)
 
         if all_books:
+            tasks_store[task_id]["aa_total"] = len(all_books)
             filename_map: dict[str, str] = {}
             keys: list[str] = []
             for isbn, filename in all_books.items():
                 keys.append(isbn)
                 filename_map[isbn] = filename
 
-            html = build_aa_page_by_isbns(keys, filename_map)
+            def _on_aa_progress(current: int, total: int) -> None:
+                tasks_store[task_id]["aa_current"] = current
+
+            html = build_aa_page_by_isbns(keys, filename_map, on_progress=_on_aa_progress)
             tasks_store[task_id]["result"] = html
             tasks_store[task_id]["status"] = "completed"
             tasks_store[task_id]["total_books"] = len(all_books)
@@ -65,7 +69,7 @@ def _process_series_task(task_id: str, series_urls: list[str]) -> None:
         tasks_store[task_id]["end_time"] = datetime.now()
 
 
-def submit_series_task(task_id: str, series_urls: list[str]) -> bool:
+def submit_series_task(task_id: str, series_urls: list[str], display_name: str = "") -> bool:
     if task_id in tasks_store and tasks_store[task_id]["status"] == "completed":
         return False
     if task_id in tasks_store and tasks_store[task_id]["status"] in ("processing", "pending"):
@@ -74,10 +78,13 @@ def submit_series_task(task_id: str, series_urls: list[str]) -> bool:
         "status": "pending",
         "total_series": len(series_urls),
         "current_series": 0,
+        "current_url": "",
         "result": None,
         "error": None,
         "total_books": 0,
-        "display_name": ", ".join(series_urls),
+        "aa_current": 0,
+        "aa_total": 0,
+        "display_name": display_name or ", ".join(series_urls),
         "created_at": datetime.now().isoformat(),
     }
     executor.submit(_process_series_task, task_id, series_urls)
@@ -110,6 +117,8 @@ def get_task_status(task_id: str) -> dict[str, Any] | None:
         "current_url": task.get("current_url", ""),
         "error": task.get("error"),
         "total_books": task.get("total_books", 0),
+        "aa_current": task.get("aa_current", 0),
+        "aa_total": task.get("aa_total", 0),
     }
 
 
@@ -118,7 +127,11 @@ def get_task_result(task_id: str) -> dict[str, Any] | None:
         return None
     task = tasks_store[task_id]
     if task["status"] == "completed" and task["result"]:
-        return {"html": task["result"], "total_books": task.get("total_books", 0)}
+        return {
+            "html": task["result"],
+            "total_books": task.get("total_books", 0),
+            "display_name": task.get("display_name", ""),
+        }
     elif task["status"] == "failed":
         return {"error": task.get("error", "未知错误")}
     return {"status": task["status"]}

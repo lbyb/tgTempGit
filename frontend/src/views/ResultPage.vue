@@ -42,6 +42,8 @@ async function loadResult(taskId: string): Promise<void> {
     if (data.html) {
       htmlContent.value = data.html
       error.value = ""
+      const dn = data.display_name || taskId.replace(/^series_|^isbn_/, "")
+      document.title = dn + " - 搜索"
     } else if (data.error) {
       error.value = data.error
     } else if (data.status) {
@@ -74,7 +76,9 @@ async function onCopySelected(): Promise<void> {
     alert("请先勾选要复制的条目")
     return
   }
-  const text = lines.join("\n")
+  const entry = history.value.find((e) => e.task_id === selectedTaskId.value)
+  const header = entry ? formatLabel(entry) : ""
+  const text = lines.join("\n") + (header ? "\n" + header : "")
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text)
@@ -111,7 +115,7 @@ function formatLabel(entry: HistoryEntry): string {
   const name = entry.display_name.length > 50
     ? entry.display_name.slice(0, 50) + "..."
     : entry.display_name
-  return `[${entry.status === "completed" ? "完成" : "失败"}] ${name} (${entry.total_books}本)`
+  return `${name}_${entry.total_books}本`
 }
 </script>
 

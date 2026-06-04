@@ -16,6 +16,8 @@ export interface TaskStatus {
   current_url: string
   error: string | null
   total_books: number
+  aa_current: number
+  aa_total: number
 }
 
 export interface TaskResult {
@@ -23,6 +25,7 @@ export interface TaskResult {
   error: string | null
   status: string | null
   total_books: number
+  display_name: string
 }
 
 export interface HistoryEntry {
@@ -58,26 +61,27 @@ export async function createSearch(data: SearchRequest): Promise<SearchResponse>
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
+    cache: "no-store",
   })
   return res.json()
 }
 
 export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
-  const res = await fetch(`${BASE}/task/${taskId}`, { headers: headers() })
+  const res = await fetch(`${BASE}/task/${taskId}`, { headers: headers(), cache: "no-store" })
   return res.json()
 }
 
 export async function getTaskResult(taskId: string): Promise<TaskResult> {
-  const res = await fetch(`${BASE}/result/${taskId}`, { headers: headers() })
+  const res = await fetch(`${BASE}/result/${taskId}`, { headers: headers(), cache: "no-store" })
   return res.json()
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {
-  const res = await fetch(`${BASE}/history`, { headers: headers() })
+  const res = await fetch(`${BASE}/history`, { headers: headers(), cache: "no-store" })
   return res.json()
 }
 
 export async function clearHistory(): Promise<{ cleared: number }> {
-  const res = await fetch(`${BASE}/history`, { method: "DELETE", headers: headers() })
+  const res = await fetch(`${BASE}/history`, { method: "DELETE", headers: headers(), cache: "no-store" })
   return res.json()
 }

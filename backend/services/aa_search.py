@@ -1,6 +1,6 @@
 import time
 import httpx
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 from bs4 import BeautifulSoup
 
 from backend.config import (
@@ -144,6 +144,7 @@ def inject_checkboxes_and_headers(
 def build_aa_page_by_isbns(
     isbns: list[str],
     filename_map: dict[str, str] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> str:
     from backend.config import get_aa_origin
     origin = get_aa_origin()
@@ -165,6 +166,8 @@ def build_aa_page_by_isbns(
     for ind, key in enumerate(isbns):
         time.sleep(__import__("random").uniform(0.5, 0.8))
         print(f"AA搜索进度: {ind+1}/{len(isbns)}")
+        if on_progress:
+            on_progress(ind + 1, len(isbns))
         soup, head_links, record_div = fetch_one_isbn_block(key)
 
         if css_js_links is None:
@@ -212,7 +215,6 @@ def render_results_page(results_blocks_html: list[str], css_js_links: str, origi
 {css_js_links or ""}
 <style>
   .aa-page {{ max-width: 1200px; margin: 0 auto; padding: 12px; }}
-  .aa-toolbar {{ position: sticky; top: 0; z-index: 999; display: flex; justify-content: center; gap: 10px; background: #fff; padding: 10px; border-bottom: 1px solid #eee; }}
   .aa-btn {{ padding: 8px 14px; border: 1px solid #d0d7de; border-radius: 8px; background: #f6f8fa; cursor: pointer; }}
   .aa-btn:hover {{ background: #eef1f4; }}
   .aa-select-cell {{ width: 36px; text-align: center; }}
@@ -223,10 +225,6 @@ def render_results_page(results_blocks_html: list[str], css_js_links: str, origi
 </head>
 <body>
   <div class="aa-page">
-    <div class="aa-toolbar">
-      <button class="aa-btn" onclick="copySelected()">复制选中链接</button>
-      <span class="aa-hint">（勾选后点击复制，每行格式：链接 | 文件名）</span>
-    </div>
     {"".join(results_blocks_html)}
   </div>
 </body>

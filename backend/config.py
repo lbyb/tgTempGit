@@ -36,8 +36,8 @@ AA_COOKIES = {
 
 MAX_WORKERS = 5
 
-MAX_RETRIES = 9
-RETRY_DELAY = 3
+MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 
 def get_aa_origin() -> str:

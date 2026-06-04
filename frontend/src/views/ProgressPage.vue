@@ -11,15 +11,20 @@ const currentSeries = ref(0)
 const totalSeries = ref(0)
 const currentUrl = ref("")
 const errorMsg = ref("")
+const aaCurrent = ref(0)
+const aaTotal = ref(0)
 let timer: ReturnType<typeof setInterval> | null = null
 
 async function checkStatus(): Promise<void> {
   try {
     const data = await getTaskStatus(props.taskId)
+    if (data.status === "not_found") return
     status.value = data.status
     currentSeries.value = data.current_series
     totalSeries.value = data.total_series
     currentUrl.value = data.current_url
+    aaCurrent.value = data.aa_current
+    aaTotal.value = data.aa_total
 
     if (data.error) {
       errorMsg.value = data.error
@@ -33,9 +38,8 @@ async function checkStatus(): Promise<void> {
     } else if (data.status === "failed") {
       if (timer) clearInterval(timer)
     }
-  } catch (e) {
-    errorMsg.value = "状态检查失败：" + (e as Error).message
-    if (timer) clearInterval(timer)
+  } catch {
+    // 网络抖动时继续轮询，不停止计时器
   }
 }
 
@@ -62,6 +66,7 @@ onUnmounted(() => {
           <div class="spinner"></div>
           <p>正在处理第 {{ currentSeries }}/{{ totalSeries }} 个系列...</p>
           <p>当前URL: {{ currentUrl }}</p>
+          <p v-if="aaTotal > 0">AA搜索进度: {{ aaCurrent }}/{{ aaTotal }}</p>
         </template>
         <template v-else-if="status === 'completed'">
           <p class="success">处理完成！正在跳转到结果页面...</p>

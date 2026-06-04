@@ -21,21 +21,27 @@ router = APIRouter(tags=["search"])
 def create_search(body: SearchRequest, _: None = Depends(verify_token)) -> JSONResponse:
     if body.series_url:
         series_urls = []
+        series_names = []
         for url in body.series_url.split(","):
-            url = url.strip()
-            if url:
-                match = re.match(r"^(\d+)-", url)
+            raw = url.strip()
+            if raw:
+                displayed = raw
+                if raw.startswith("http"):
+                    m2 = re.search(r"series/(\d+)", raw)
+                    displayed = m2.group(1) if m2 else raw
+                url = raw
+                match = re.match(r"^(\d+)", url)
                 if match:
-                    series_id = match.group(1)
-                    url = f"https://book.douban.com/series/{series_id}"
+                    url = f"https://book.douban.com/series/{match.group(1)}"
                 series_urls.append(url)
+                series_names.append(displayed)
 
         if series_urls:
             task_id = make_series_task_id(series_urls)
             existing = get_task_result(task_id)
             if existing and existing.get("html"):
                 return JSONResponse({"task_id": task_id, "html": None, "cached": True})
-            submit_series_task(task_id, series_urls)
+            submit_series_task(task_id, series_urls, display_name=", ".join(series_names))
             return JSONResponse({"task_id": task_id, "html": None, "cached": False})
 
     if body.isbns:
