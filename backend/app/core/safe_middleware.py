@@ -9,7 +9,7 @@ from backend.app.config import get_settings
 
 settings = get_settings()
 
-SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
+SKIP_PATHS = {"/health", "/favicon.ico"}
 
 
 class TokenMiddleware(BaseHTTPMiddleware):

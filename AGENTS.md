@@ -50,3 +50,10 @@
 | 启动横幅 | `up`/`deploy` 成功后输出醒目的横幅：访问地址 + 完整的 Docker 常用命令速查表（日志/状态/进容器/停止/清理等） |
 | help 输出 | `help` 命令输出：用法、场景示例、访问地址、Docker 备忘。可作为长期不碰项目后的快速提醒 |
 | 函数复用 | `do_up(port, full_rebuild)` 作为核心启动函数，`cmd_up` / `cmd_deploy` / `cmd_debug` 仅传入不同参数调用 |
+
+# FastAPI 端点原则
+
+| 端点 | 保留 | 原因 |
+|------|------|------|
+| `/health` | 必须保留 | Docker HEALTHCHECK 和 run.sh 启动等待（`curl /health`）都依赖它 |
+| `/docs`, `/openapi.json`, `/redoc` | 不保留 | 非必须的 Swagger UI，通过 `docs_url=None, redoc_url=None, openapi_url=None` 关闭 |

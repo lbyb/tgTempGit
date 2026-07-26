@@ -20,7 +20,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await engine.dispose()
 
 
-app = FastAPI(title="cfCloudFile", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="cfCloudFile", version="0.1.0", lifespan=lifespan,
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
 app.add_middleware(TokenMiddleware)
 app.include_router(files_router)
 

@@ -12,7 +12,6 @@ set -euo pipefail
 # ║                                                                      ║
 # ║  访问地址（启动后）:                                                 ║
 # ║    主页:    http://localhost/?token=lby                               ║
-# ║    API文档: http://localhost/docs?token=lby                           ║
 # ║    健康检查: http://localhost/health                                  ║
 # ║                                                                      ║
 # ║  子命令:                                                             ║
@@ -115,7 +114,6 @@ print_banner() {
     printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     echo ""
     echo -e "  ${BOLD}主页${NC}       ${BOLD}${BASE_URL}/?token=${TOKEN}${NC}"
-    echo -e "  ${BOLD}API 文档${NC}   ${BASE_URL}/docs?token=${TOKEN}"
     echo -e "  ${BOLD}健康检查${NC}   ${BASE_URL}/health"
     echo ""
     printf "${YELLOW}  Cloudflare: 将域名 A 记录指向本机 IP，代理（橙云）或 DNS（灰云）均可${NC}\n"
@@ -244,7 +242,6 @@ cmd_help() {
     echo ""
     echo "访问:"
     echo "  http://localhost/?token=lby          主页"
-    echo "  http://localhost/docs?token=lby      API 文档"
     echo "  http://localhost/health              健康检查"
     echo ""
     echo "Docker 备忘:"
