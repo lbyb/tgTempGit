@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cfcloud-app
+    ports:
+      - "${APP_PORT:-80}:8000"
+    environment:
+      - TOKEN=${TOKEN:-lby}
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-cfcloud}:${DB_PASSWORD:-cfcloud}@db:5432/${DB_NAME:-cfcloud}
+      - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-500}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: cfcloud-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-cfcloud}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cfcloud}
+      POSTGRES_DB: ${DB_NAME:-cfcloud}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cfcloud} -d ${DB_NAME:-cfcloud}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  uploads:
+  pgdata:

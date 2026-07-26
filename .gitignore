@@ -38,6 +38,5 @@ Thumbs.db
 # Docker
 *.tar
 
-# opencode runtime (session data, not config)
-.opencode/sessions/
-.opencode/logs/
+# opencode (Agent / skill / config)
+.opencode/
