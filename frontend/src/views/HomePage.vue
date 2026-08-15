@@ -35,6 +35,10 @@ async function onSubmit(): Promise<void> {
       series_url: seriesUrl.value || null,
       isbns: isbns.value || null,
     })
+    if (res.failed) {
+      error.value = "AA 搜索失败（挑战未通过或网络异常），请点击「合并搜索结果」重试"
+      return
+    }
     if (res.task_id) {
       if (res.cached) {
         router.push({ name: "result", params: { taskId: res.task_id } })

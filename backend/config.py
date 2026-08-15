@@ -6,7 +6,7 @@ LOGIN_URL = "http://www.lbylkylin.vip/login"
 
 SECRET_TOKEN = os.getenv("APP_SECRET_TOKEN", "lby")
 
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 DOUBAN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -41,6 +41,11 @@ RETRY_DELAY = 2
 
 
 def get_aa_origin() -> str:
+    """获取当前可用的 annas-archive 镜像域名。
+
+    login 端点返回当前可用的 TLD（如 pk / gd），
+    失败时回退到已知可用的 .gd。
+    """
     for attempt in range(2):
         try:
             response = requests.get(LOGIN_URL, timeout=10)
@@ -50,7 +55,7 @@ def get_aa_origin() -> str:
         except Exception:
             if attempt == 0:
                 time.sleep(30)
-    return "https://annas-archive.li"
+    return "https://annas-archive.gd"
 
 
 def get_aa_base_url() -> str:

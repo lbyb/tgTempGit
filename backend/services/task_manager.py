@@ -54,9 +54,16 @@ def _process_series_task(task_id: str, series_urls: list[str]) -> None:
                 tasks_store[task_id]["aa_current"] = current
 
             html = build_aa_page_by_isbns(keys, filename_map, on_progress=_on_aa_progress)
-            tasks_store[task_id]["result"] = html
-            tasks_store[task_id]["status"] = "completed"
-            tasks_store[task_id]["total_books"] = len(all_books)
+            if "aa-search-failed" in html:
+                # 部分/全部 AA 抓取失败：标记失败，允许用户重新搜索
+                tasks_store[task_id]["status"] = "failed"
+                tasks_store[task_id]["error"] = "AA 搜索失败（挑战未通过或网络异常），请重试"
+                tasks_store[task_id]["result"] = html
+                tasks_store[task_id]["total_books"] = len(all_books)
+            else:
+                tasks_store[task_id]["result"] = html
+                tasks_store[task_id]["status"] = "completed"
+                tasks_store[task_id]["total_books"] = len(all_books)
         else:
             tasks_store[task_id]["status"] = "failed"
             tasks_store[task_id]["error"] = "未找到任何书籍"

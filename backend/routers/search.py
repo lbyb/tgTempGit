@@ -41,6 +41,7 @@ def create_search(body: SearchRequest, _: None = Depends(verify_token)) -> JSONR
             existing = get_task_result(task_id)
             if existing and existing.get("html"):
                 return JSONResponse({"task_id": task_id, "html": None, "cached": True})
+            # failed 或 processing 任务会走这里，submit_series_task 内部判断
             submit_series_task(task_id, series_urls, display_name=", ".join(series_names))
             return JSONResponse({"task_id": task_id, "html": None, "cached": False})
 
@@ -51,6 +52,10 @@ def create_search(body: SearchRequest, _: None = Depends(verify_token)) -> JSONR
         if existing and existing.get("html"):
             return JSONResponse({"task_id": task_id, "html": None, "cached": True})
         html = build_aa_page_by_isbns(parts)
+        # 若搜索过程中存在抓取失败（DDoS-Guard 挑战未通过等），
+        # 不缓存失败结果，允许用户下次重试真实搜索。
+        if "aa-search-failed" in html:
+            return JSONResponse({"task_id": task_id, "html": None, "cached": False, "failed": True})
         cache_isbn_result(task_id, parts, html)
         return JSONResponse({"task_id": task_id, "html": None, "cached": False})
 

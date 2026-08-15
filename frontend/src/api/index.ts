@@ -7,6 +7,7 @@ export interface SearchResponse {
   task_id: string | null
   html: string | null
   cached: boolean
+  failed?: boolean
 }
 
 export interface TaskStatus {
