@@ -1,24 +1,21 @@
-# Pupdf - PDF 逐页书签工具
+# Pupdf - 单文件 PDF 逐页书签工具
 
-给 PDF 批量创建“目录 + 正文页码”书签和页码标签，处理后**直接覆盖原 PDF**。
+一个跨平台的 Python 脚本：给 PDF 创建“目录 + 正文页码”书签和页码标签，
+处理后**直接覆盖原 PDF**。不再包含 Windows 图形界面或 exe，Linux、macOS、
+Windows 共用同一个脚本。
+
 只要求输入两个页码：
 
 1. 目录页所在页；
 2. 正文第 1 页所在页。
 
-命令行版本面向 Linux，图形界面版本面向 Windows。两者共用同一套经过测试的
-PDF 处理核心，便于以后修改。
-
-## 界面预览
-
-![Pupdf 图形界面](docs/screenshot.png)
-
-> 截图为 Linux 测试环境（Xvfb）中的 Tk 界面，用于验证布局和交互；Windows 上
-> 使用系统原生控件主题，视觉细节会略有不同。
+推荐用 [uv](https://docs.astral.sh/uv/) 直接运行。脚本已经用 PEP 723 声明了
+Python 版本和 PyMuPDF 依赖，uv 会自动准备隔离环境，**不会安装到系统 Python
+或全局 site-packages**。
 
 ## 功能
 
-- 自动查找程序目录中的唯一 PDF（不递归、扩展名不区分大小写）。
+- 自动查找当前目录（或 `--dir` 指定目录）中的唯一 PDF。
 - 根据两个页码自动推算：
   - 目录页范围：`目录页` 到 `正文第1页 - 1`；
   - 正文页范围：`正文第1页` 到最后一页，并从 1 开始编号。
@@ -28,7 +25,7 @@ PDF 处理核心，便于以后修改。
 - 写入 PDF 页码标签：目录页显示“目录 1、目录 2…”，正文页显示“1、2…N”。
 - 使用隐藏临时文件 + 重新打开校验 + 原子替换，失败时原 PDF 不受影响。
 - 默认替换原有书签；可选保留原书签并追加。默认不生成 `.bak`，可按需开启。
-- Linux CLI 支持参数和交互输入；Windows GUI 支持双击、拖文件到 exe、文件选择框。
+- 只依赖 PyMuPDF，Windows / Linux / macOS 使用同一套代码。
 
 ### 书签示例
 
@@ -57,36 +54,56 @@ PDF 处理核心，便于以后修改。
 - PDF 第 5-6 页显示 `目录 1`、`目录 2`；
 - PDF 第 7-100 页显示 `1` 到 `94`。
 
-> “目录页”和“正文第 1 页”都按 PDF 阅读器中显示的**物理页序号**填写，从 1 开始。
-> 如果正文前有封面、前言等页面，它们保持原样，不会被纳入正文编号。
+> “目录页”和“正文第 1 页”都按 PDF 阅读器中的**物理页序号**填写，从 1 开始。
+> 正文前的封面、前言等页面保持原样，不会被纳入正文编号。
 
-## 环境要求
+## 安装 uv
 
-- Python 3.10+。开发验证使用 Python 3.12；Windows 构建建议使用 64 位 Python 3.12。
-- [PyMuPDF](https://pymupdf.readthedocs.io/)（安装时自动获取）。
-- Linux CLI：不需要图形库。
-- Linux GUI（可选）：`python3-tk` 和桌面环境。
-- Windows GUI：官方 Python 自带 Tkinter；打包后不需要安装 Python。
+只需要安装 uv，不需要手动安装 Python 或 PyMuPDF。
 
-## Linux 安装与使用
+**Windows（PowerShell）**
 
-为了不污染系统 Python，推荐使用项目内的虚拟环境：
+```powershell
+winget install --id=astral-sh.uv -e
+# 或者：
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Linux / macOS**
 
 ```bash
-cd pupdf
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+安装后确认：
+
+```bash
+uv --version
+```
+
+## 直接运行
 
 ### 交互模式（最常用）
 
-把唯一一个 PDF 放在当前目录：
+把唯一一个 PDF 放在当前目录，然后运行脚本：
 
 ```bash
 cd /path/to/book-folder
-pupdf
+uv run /path/to/pupdf.py
+```
+
+Windows PowerShell：
+
+```powershell
+cd D:\books
+uv run C:\tools\pupdf.py
+```
+
+也可以先把 `pupdf.py` 复制到 PDF 所在目录：
+
+```powershell
+cd D:\books
+uv run .\pupdf.py
 ```
 
 程序会提示：
@@ -96,114 +113,89 @@ pupdf
 正文第1页所在页码（6-100）：
 ```
 
-请输入两个页码，确认后直接覆盖该 PDF。
+输入两个页码后，直接覆盖该 PDF。
+
+第一次运行时 uv 会下载 Python（如果需要）和 PyMuPDF；之后使用缓存，不会在
+系统 Python 中安装任何包。需要清理 uv 缓存时执行 `uv cache clean`。
+
+如果当前目录本身是另一个 uv/Python 项目，可加 `--no-project`，明确只使用脚本
+自己的依赖：
+
+```bash
+uv run --no-project pupdf.py
+```
 
 ### 非交互模式
 
 ```bash
 # 自动查找当前目录的唯一 PDF
-pupdf --toc-page 5 --body-page 7
+uv run pupdf.py --toc-page 5 --body-page 7
 
 # 指定 PDF
-pupdf --pdf /data/books/demo.pdf --toc-page 5 --body-page 7
+uv run pupdf.py --pdf /data/books/demo.pdf --toc-page 5 --body-page 7
+
+# 指定查找目录
+uv run pupdf.py --dir /data/books --toc-page 5 --body-page 7
 
 # 先预览，不修改文件
-pupdf --toc-page 5 --body-page 7 --dry-run
+uv run pupdf.py --toc-page 5 --body-page 7 --dry-run
 
 # 保留原书签并追加；覆盖前生成 demo.pdf.bak
-pupdf --toc-page 5 --body-page 7 --keep-outline --backup
+uv run pupdf.py --toc-page 5 --body-page 7 --keep-outline --backup
 
 # 只写书签，不写页码标签
-pupdf --toc-page 5 --body-page 7 --no-page-labels
+uv run pupdf.py --toc-page 5 --body-page 7 --no-page-labels
 ```
 
-也可以使用模块方式运行：
+Windows 路径带空格时加引号：
 
-```bash
-python -m pupdf --toc-page 5 --body-page 7
+```powershell
+uv run C:\tools\pupdf.py --pdf "D:\My Books\demo.pdf" --toc-page 5 --body-page 7
 ```
 
 ### 命令行参数
 
 ```text
 --pdf PATH            指定 PDF（默认自动查找唯一 PDF）
---dir DIR             自动查找 PDF 的目录（默认当前目录；也可配合 --gui）
+--dir DIR             自动查找 PDF 的目录（默认当前目录）
 --toc-page N          目录页所在页码
 --body-page N         正文第 1 页所在页码
 --keep-outline        保留并追加原书签（默认替换）
 --no-page-labels      不写入页码标签
 --backup              覆盖前创建 <原名>.pdf.bak
 --dry-run             只显示计划，不修改
---gui                 启动图形界面
 --debug               未预期错误时打印完整 traceback
 --version             显示版本
 ```
 
 退出码：`0` 成功；`1` PDF/文件错误；`2` 输入或参数错误；`130` 用户取消。
 
-## Windows 可执行程序
+## 脚本声明的运行环境
 
-Windows 版构建产物是一个无控制台的 GUI 程序 `Pupdf.exe`。由于 PyInstaller
-不能从 Linux 直接交叉编译 Windows exe，请在 Windows 上构建，或使用仓库中的
-GitHub Actions 工作流生成构建产物。
+`pupdf.py` 顶部的 PEP 723 元数据：
 
-> 本仓库不附带预编译的 exe。当前仓库中的 Linux 源码、Tk 界面和 PyInstaller
-> one-file 结构已实际验证；Windows 专用构建需要按下面步骤在 Windows 或 CI 上执行。
-
-### 方式一：在 Windows 上构建
-
-1. 安装 64 位 Python 3.10+（建议 3.12），安装时保留 Tcl/Tk 组件。
-2. 解压源码，进入项目目录。
-3. 双击运行：
-
-```bat
-scripts\build_windows.bat
+```python
+# requires-python = ">=3.10,<3.14"
+# dependencies = ["pymupdf==1.24.14"]
 ```
 
-脚本会在项目内创建隔离环境 `.venv-build`，安装依赖、运行测试，并用
-PyInstaller 构建单文件 GUI 程序：
+uv 会按这个声明创建临时运行环境。Windows 上不需要提前安装 Python；如果本机
+没有合适版本，uv 可以自动下载受管理的 Python 3.12/3.13。PyMuPDF 使用官方
+Windows wheel，不涉及编译工具。
 
-```text
-dist\Pupdf.exe
+如果不想使用 uv，也可以手动运行（会安装到当前 Python 环境）：
+
+```bash
+python -m pip install -r requirements.txt
+python pupdf.py --toc-page 5 --body-page 7
 ```
 
-也可以手动执行：
-
-```bat
-py -3 -m venv .venv-build
-.venv-build\Scripts\activate
-python -m pip install -e ".[dev]"
-python -m pytest -q
-python -m PyInstaller --noconfirm --clean pupdf.spec
-```
-
-### 方式二：GitHub Actions
-
-推送代码后，在 Actions 页面运行 `windows-build` 工作流，下载
-`Pupdf-windows` artifact，其中包含 `Pupdf.exe`。
-
-### 使用方式
-
-**双击打开**
-
-1. 把 `Pupdf.exe` 和一个 PDF 放在同一个文件夹；
-2. 双击 `Pupdf.exe`；
-3. 程序自动显示该 PDF；
-4. 输入目录页和正文第 1 页页码，点击“生成书签并覆盖 PDF”。
-
-**把 PDF 拖到 exe 上**
-
-1. 从资源管理器把任意位置的 PDF 拖到 `Pupdf.exe` 图标上；
-2. 程序带该文件路径启动（不受 exe 所在目录限制）；
-3. 输入两个页码并生成。
-
-如果程序目录中有多个 PDF，程序不会猜测，界面会提示点击“选择…”指定文件。
-Windows 版启动时会短暂解压运行时文件，这是 PyInstaller 单文件程序的正常现象。
+不推荐在 Windows 全局 Python 中这样做；优先使用 uv。
 
 ## 行为与安全说明
 
-- **覆盖目标**：始终覆盖打开的那个 PDF；不会另存新文件。可用 `--backup` 或
-  复制原文件后操作。
+- **覆盖目标**：始终覆盖打开的那个 PDF，不会另存新文件。可用 `--backup`，
+  或先自行复制原文件。
 - **原子写入**：先写同目录隐藏临时文件，重新打开并校验页数/书签数量，再用
   `os.replace` 替换原文件。任何一步报错都会删除临时文件，原文件保持不变。
 - **文件锁**：Windows 阅读器打开 PDF 时可能锁定文件。覆盖失败时请关闭阅读器
@@ -211,40 +203,31 @@ Windows 版启动时会短暂解压运行时文件，这是 PyInstaller 单文�
 - **加密 PDF**：带用户密码或权限密码的 PDF 会拒绝处理，避免在重写时丢失加密
   或权限设置。
 - **数字签名**：任何 PDF 修改都会使已有数字签名失效。
-- **原书签**：默认替换。若原书签需要保留，请使用 `--keep-outline`；GUI 在检测
-  到已有书签时会二次确认。保留模式会保留标题、层级和页目标，但无法保留指向
-  外部 URL 的书签（PDF 大纲的简单列表无法表达外部目标）。
-- **页码标签**：使用标准 PDF `/PageLabels`，中文前缀以 UTF-16BE 写入，兼容
-  主流阅读器；即使阅读器不显示页码标签，大纲书签仍然有效。
-- **大文件**：处理需要重写整个 PDF，页数很多时需要一些时间；GUI 在后台线程
-  执行，窗口不会假死。
+- **原书签**：默认替换。需要保留时用 `--keep-outline`；保留模式会保留标题、
+  层级和页目标，但无法保留指向外部 URL 的书签。
+- **页码标签**：使用标准 PDF `/PageLabels`，中文前缀以 UTF-16BE 写入；即使
+  阅读器不显示页码标签，大纲书签仍然有效。
 - **自动查找**：只查一层目录，不递归；忽略本工具自己的 `.pupdf-*.pdf` 临时文件。
+- **大文件**：处理需要重写整个 PDF，页数很多时需要一些时间。
 
 ## 项目结构
 
 ```text
-src/pupdf/
-  core.py          PDF 分析、页码校验、书签/页码标签、原子覆盖（稳定 API）
-  discovery.py     唯一 PDF 查找、拖放参数解析、GUI 启动选择
-  cli.py           Linux 命令行界面和交互提示
-  gui.py           Tkinter 延迟加载入口
-  gui_app.py       Windows/Tk 图形界面
-  errors.py        面向用户的异常类型
-packaging/
-  windows_launcher.py   Windows GUI exe 入口，负责无控制台错误提示
-pupdf.spec         PyInstaller 单文件构建配置
-scripts/
-  build_windows.bat    一键 Windows 构建脚本
-tests/            核心、CLI、文件查找、GUI 冒烟测试
-docs/DEVELOPMENT.md   本次编码与调试过程记录
+pupdf.py          单文件程序：PDF 引擎 + CLI + PEP 723 依赖声明
+tests/            核心、CLI、文件查找测试
+pytest.ini        测试配置
+ruff.toml         代码检查配置
+requirements.txt  不使用 uv 时的 PyMuPDF 依赖
+docs/DEVELOPMENT.md  本次实现和调试过程
+.github/workflows/tests.yml  Linux + Windows CI
 ```
 
 ## 二次开发接口
 
-核心逻辑与界面解耦，推荐直接调用 `pupdf.core`：
+脚本也可以作为模块导入：
 
 ```python
-from pupdf.core import analyze_pdf, build_plan, execute_plan, process_pdf
+from pupdf import analyze_pdf, build_plan, execute_plan, process_pdf
 
 info = analyze_pdf("book.pdf")
 print(info.total_pages, info.has_outline)
@@ -256,7 +239,6 @@ print(result.generated_bookmarks)
 # 或者先规划、预览，再执行
 plan = build_plan("book.pdf", toc_page=5, body_page=7, keep_outline=True)
 print(plan.generated_outline)
-print(plan.page_labels)
 result = execute_plan(plan, backup=False)
 ```
 
@@ -265,18 +247,24 @@ result = execute_plan(plan, backup=False)
 - `PageLayout`：已校验的 1-based 页码布局，提供 `toc_pages`、`body_pages`。
 - `PdfInfo`：页数、标题、是否已有大纲。
 - `ProcessPlan`：不可变的处理计划，包含 `final_outline` 和 `page_labels`。
-- `ProcessResult`：实际写入结果，可用于 CLI/GUI 展示。
+- `ProcessResult`：实际写入结果。
 
 要调整书签层级或命名，修改 `ProcessPlan.generated_outline`；要调整页码标签，
-修改 `ProcessPlan.page_labels`。两者都有单元测试覆盖。异常统一继承
-`pupdf.errors.PupdfError`，界面层只负责转换成中文提示。
+修改 `ProcessPlan.page_labels`。异常统一继承 `PupdfError`。
 
 ## 测试
 
+不需要创建项目虚拟环境，uv 会临时准备测试依赖：
+
 ```bash
-. .venv/bin/activate
-python -m pip install -e ".[dev]"
-python -m pytest -q
+uv run --with pytest --with pymupdf==1.24.14 pytest -q
+```
+
+代码检查：
+
+```bash
+uvx ruff check pupdf.py tests
+uvx ruff format --check pupdf.py tests
 ```
 
 测试覆盖：
@@ -284,19 +272,22 @@ python -m pytest -q
 - 书签分组、单页目录、书签页码、原书签替换/保留、幂等性；
 - 页码标签、中文 UTF-16BE 前缀、关闭页码标签；
 - 非法页码、加密 PDF、损坏 PDF、扩展名错误；
-- 覆盖失败/写入失败时原文件不变、临时文件被清理；
-- 自动查找唯一/多个 PDF、拖放参数解析、冻结 exe 的目录判断；
-- CLI 参数、交互输入、dry-run、退出码；
-- Tk GUI 冒烟测试（无显示环境时自动跳过）。
+- 覆盖失败/写入失败/临时目录不可写时原文件不变、临时文件被清理；
+- 自动查找唯一/多个 PDF、默认当前目录；
+- CLI 参数、交互输入、dry-run、`--dir`、退出码。
 
-本次开发的实际测试输出和排错记录见
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+GitHub Actions 在 **Ubuntu 和 Windows** 两个平台执行同一套测试，并额外运行
+`uv run pupdf.py --version` 验证 Windows 下的 uv 启动链路。
 
 ## 常见问题
 
+**`uv: command not found`**
+
+先按上面的 Windows PowerShell 或 Linux 命令安装 uv，然后重新打开终端。
+
 **提示“目录中有多个 PDF 文件”**
 
-自动模式只处理唯一 PDF。只保留一个，或用 `--pdf` / GUI 的“选择…”指定。
+自动模式只处理唯一 PDF。只保留一个，或用 `--pdf` 指定文件。
 
 **提示“正文第1页必须大于目录页”**
 
@@ -307,25 +298,18 @@ python -m pytest -q
 关闭 Adobe Acrobat、Edge、SumatraPDF 等正在打开该文件的程序，并检查文件是否
 只读。失败不会损坏原文件；重新运行即可。
 
-**Linux 上 `pupdf --gui` 提示缺少 Tkinter**
+**Windows 终端中文显示异常**
 
-```bash
-sudo apt install python3-tk
-```
-
-无桌面/无 X11 的服务器请直接使用 CLI。
-
-**Windows 提示 SmartScreen/杀毒软件**
-
-本地构建的 exe 没有代码签名，可能触发警告。可自行签名，或从源码运行
-`python -m pupdf --gui`。
+建议使用 Windows Terminal / PowerShell 7；脚本会把重定向输出设置为 UTF-8。
+老式 `cmd.exe` 可先执行 `chcp 65001`。
 
 ## 已知限制
 
 - 不处理带密码的 PDF。
 - 不解析目录页上的文字来确定章节，只根据用户给出的两个页码生成逐页书签。
 - 重写 PDF 可能改变文件内部结构，不适合需要保留数字签名或严格 PDF/A 认证的文件。
-- 自动查找只针对程序目录，不扫描子目录。
+- 自动查找只针对指定目录，不扫描子目录。
+- 不提供 GUI 或预编译 exe；需要 Python 脚本运行环境（uv 会简化这一步）。
 
 ## License
 

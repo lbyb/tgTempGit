@@ -1,0 +1,6 @@
+line-length = 88
+
+[lint]
+# The CLI deliberately catches broad exceptions at its outermost boundary so
+# users see a friendly error instead of a traceback.
+ignore = ["BLE001"]

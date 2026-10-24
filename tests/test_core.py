@@ -6,16 +6,18 @@ from pathlib import Path
 import pymupdf as fitz
 import pytest
 
-from pupdf import core
-from pupdf.core import (
+import pupdf as core
+from pupdf import (
+    EncryptedPdfError,
     PdfInfo,
+    PdfOperationError,
+    UserInputError,
     analyze_pdf,
     build_plan,
     execute_plan,
     process_pdf,
     validate_layout,
 )
-from pupdf.errors import EncryptedPdfError, PdfOperationError, UserInputError
 
 
 def digest(path: Path) -> str:

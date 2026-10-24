@@ -8,20 +8,17 @@ from pathlib import Path
 import pymupdf as fitz
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "pupdf.py"
 
 
 def run_cli(args: list[str], *, cwd: Path, stdin: str | None = None):
     env = os.environ.copy()
-    pythonpath = str(ROOT / "src")
-    env["PYTHONPATH"] = pythonpath + (
-        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
-    )
     # CI also runs on an English Windows runner (cp1252).  Force UTF-8 so the
     # Chinese CLI messages can be captured reliably on every platform.
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
-        [sys.executable, "-m", "pupdf", *args],
+        [sys.executable, str(SCRIPT), *args],
         cwd=cwd,
         check=False,
         input=stdin,
@@ -37,7 +34,7 @@ def run_cli(args: list[str], *, cwd: Path, stdin: str | None = None):
 def test_version_and_help(tmp_path):
     version = run_cli(["--version"], cwd=tmp_path)
     assert version.returncode == 0
-    assert "pupdf 0.1.0" in version.stdout
+    assert "pupdf.py 0.2.0" in version.stdout
 
     help_result = run_cli(["--help"], cwd=tmp_path)
     assert help_result.returncode == 0
@@ -136,12 +133,6 @@ def test_keep_outline_and_no_page_labels_flags(pdf_factory, tmp_path):
         assert doc.get_page_labels() == []
 
 
-def test_gui_arguments_conflict(tmp_path):
-    result = run_cli(["--gui", "--toc-page", "2"], cwd=tmp_path)
-    assert result.returncode == 2
-    assert "不要同时使用" in result.stderr
-
-
 def test_missing_pdf_file(pdf_factory, tmp_path):
     result = run_cli(
         ["--pdf", "missing.pdf", "--toc-page", "2", "--body-page", "3"],
@@ -171,3 +162,19 @@ def test_single_page_pdf_has_clear_error(pdf_factory, tmp_path):
     )
     assert result.returncode == 2
     assert "至少需要 2 页" in result.stderr
+
+
+def test_dir_option_finds_pdf(pdf_factory, tmp_path):
+    books = tmp_path / "books"
+    books.mkdir()
+    pdf = pdf_factory(pages=6, name="in-dir.pdf")
+    moved = books / pdf.name
+    pdf.replace(moved)
+    result = run_cli(
+        ["--dir", str(books), "--toc-page", "2", "--body-page", "3"],
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert str(moved) in result.stdout
+    with fitz.open(moved) as doc:
+        assert doc.get_toc()[0][1] == "目录"

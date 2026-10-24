@@ -1,0 +1,48 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run tests
+        run: uv run --python ${{ matrix.python }} --with pytest --with pymupdf==1.24.14 pytest -q
+
+      - name: Smoke-test the uv script entry point
+        run: uv run --python ${{ matrix.python }} pupdf.py --version
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Ruff check
+        run: uvx ruff check pupdf.py tests
+
+      - name: Ruff format check
+        run: uvx ruff format --check pupdf.py tests

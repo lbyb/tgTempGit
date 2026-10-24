@@ -1,29 +1,23 @@
-# Local Python environments
+# uv / Python local environments and caches
 .venv/
-.venv-build/
-.venv-gui/
-env/
-venv/
-
-# Python caches and build metadata
+.uv/
+.uv-cache/
+.uv-python/
+.uv-tools/
+.uv-bin/
 __pycache__/
 *.py[cod]
-*.egg-info/
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-build/
-dist/
-*.spec.bak
+.mypy_cache/
 
-# Local experiments / generated artifacts
-.scratch/
+# Generated PDFs and backups
 *.pdf.bak
-pupdf-error.log
-pupdf-startup-error.log
 
 # OS/editor noise
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.swp
+*~

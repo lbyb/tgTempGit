@@ -1,60 +1,149 @@
-"""PDF bookmark and page-label engine.
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10,<3.14"
+# dependencies = [
+#   "pymupdf==1.24.14",
+# ]
+# ///
+"""Pupdf - create per-page bookmarks and page labels in a PDF.
 
-Public entry points
--------------------
-``analyze_pdf(path)``
-    Read basic information without modifying anything.
-``build_plan(path, toc_page, body_page, ...)``
-    Validate page numbers and produce an immutable description of the work.
-``process_pdf(path, toc_page, body_page, ...)``
-    Build a plan and apply it in place (atomic replacement).
-``execute_plan(plan, backup=False)``
-    Apply a previously built plan, useful for preview/confirm workflows.
+Run directly with uv on Linux, macOS or Windows::
 
-All page numbers accepted by this module are 1-based, exactly as shown in a
-PDF viewer.  The resulting PDF gets:
+    uv run pupdf.py
 
-* a grouped outline: ``目录`` -> ``目录 1 .. 目录 k`` and
-  ``正文`` -> ``第1页 .. 第N页``;
-* page labels: TOC pages are ``目录 1 .. 目录 k`` and body pages are
-  ``1 .. N``.
+Only two page numbers are required: the page where the table of contents
+starts and the page where body page 1 starts.  The PDF is overwritten in
+place after a verified, atomic temporary-file write.
 
-The original file is never edited in place.  A hidden temporary file is
-written next to it, reopened for verification, and only then atomically
-replaces the original.  If anything fails, the original is untouched.
+The command-line layer and PDF engine deliberately live in this one file so
+the tool can be copied anywhere and run with uv without installing a project
+or polluting the system Python environment.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import stat
+import sys
 import tempfile
+import traceback
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .errors import EncryptedPdfError, PdfOperationError, UserInputError
-
-try:  # PyMuPDF >= 1.24 prefers the "pymupdf" import name.
-    import pymupdf as fitz  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - exercised only on older installs
-    try:
-        import fitz  # type: ignore[no-redef]
-    except ImportError:  # pragma: no cover - dependency problem
-        fitz = None  # type: ignore[assignment]
-
+__version__ = "0.2.0"
 
 TOC_TITLE = "目录"
 BODY_TITLE = "正文"
 TOC_PREFIX = "目录 "
 
+try:  # PyMuPDF >= 1.24 prefers the "pymupdf" import name.
+    import pymupdf as fitz
+except ImportError:  # pragma: no cover - older installations
+    try:
+        import fitz  # type: ignore[no-redef]
+    except ImportError:  # pragma: no cover - dependency missing
+        fitz = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# User-facing errors
+# ---------------------------------------------------------------------------
+
+
+class PupdfError(Exception):
+    """Base class for expected, recoverable errors."""
+
+
+class UserInputError(PupdfError):
+    """A page number, path or option supplied by the user is not valid."""
+
+
+class DiscoveryError(PupdfError):
+    """The input PDF could not be determined."""
+
+
+class PdfOperationError(PupdfError):
+    """A PDF could not be opened, changed, or written safely."""
+
+
+class EncryptedPdfError(PdfOperationError):
+    """The PDF requires a password and cannot be processed."""
+
+
+# ---------------------------------------------------------------------------
+# PDF discovery
+# ---------------------------------------------------------------------------
+
+
+def _is_temporary_pdf(path: Path) -> bool:
+    return path.name.startswith(".") and ".pupdf-" in path.name
+
+
+def find_pdfs(directory: str | Path | None = None) -> list[Path]:
+    """Return all PDFs directly inside *directory* (non-recursive)."""
+
+    folder = Path(directory).expanduser() if directory is not None else Path.cwd()
+    try:
+        folder = folder.resolve()
+    except OSError as exc:
+        raise DiscoveryError(f"无法解析目录路径：{folder}（{exc}）") from exc
+
+    if not folder.exists():
+        raise DiscoveryError(f"目录不存在：{folder}")
+    if not folder.is_dir():
+        raise DiscoveryError(f"不是目录：{folder}")
+
+    try:
+        pdfs = [
+            item
+            for item in folder.iterdir()
+            if item.is_file()
+            and item.suffix.lower() == ".pdf"
+            and not _is_temporary_pdf(item)
+        ]
+    except PermissionError as exc:
+        raise DiscoveryError(f"没有权限读取目录：{folder}") from exc
+    except OSError as exc:
+        raise DiscoveryError(f"读取目录失败：{folder}（{exc}）") from exc
+
+    return sorted(pdfs, key=lambda item: item.name.casefold())
+
+
+def find_single_pdf(directory: str | Path | None = None) -> Path:
+    """Find exactly one PDF or raise a helpful :class:`DiscoveryError`."""
+
+    folder = Path(directory).expanduser() if directory is not None else Path.cwd()
+    pdfs = find_pdfs(folder)
+
+    if not pdfs:
+        raise DiscoveryError(
+            f"目录中没有 PDF 文件：{folder}\n"
+            "请把一个 PDF 放在该目录，或使用 --pdf 指定文件。"
+        )
+    if len(pdfs) > 1:
+        names = "\n".join(f"  - {pdf.name}" for pdf in pdfs)
+        raise DiscoveryError(
+            f"目录中有多个 PDF 文件：{folder}\n{names}\n"
+            "为避免处理错误的文件，请只保留一个，或使用 --pdf 指定文件。"
+        )
+    return pdfs[0]
+
+
+# ---------------------------------------------------------------------------
+# PDF engine
+# ---------------------------------------------------------------------------
+
 
 def _require_fitz():
     if fitz is None:
         raise PdfOperationError(
-            "缺少 PDF 处理库 PyMuPDF。请先安装依赖：\n"
-            "  python -m pip install -r requirements.txt"
+            "缺少 PDF 处理库 PyMuPDF。\n"
+            "推荐用 uv 运行，它会自动安装脚本声明的依赖：\n"
+            "  uv run pupdf.py\n"
+            "或者手动执行：python -m pip install -r requirements.txt"
         )
     return fitz
 
@@ -85,7 +174,7 @@ def _open_document(path: Path):
     fitz_module = _require_fitz()
     try:
         doc = fitz_module.open(str(path), filetype="pdf")
-    except Exception as exc:  # MuPDF raises several low-level exception types
+    except Exception as exc:
         raise PdfOperationError(
             f"无法打开 PDF：{path}\n可能文件已损坏或不是有效的 PDF。（{exc}）"
         ) from exc
@@ -93,11 +182,10 @@ def _open_document(path: Path):
     if doc.needs_pass:
         doc.close()
         raise EncryptedPdfError(f"PDF 受密码保护，暂不支持处理：{path}")
-    # MuPDF reports owner-password-only PDFs (empty user password) with
-    # ``is_encrypted == False`` but still exposes an encryption description in
-    # metadata.  Re-saving those would silently strip the original encryption
-    # and permission settings, so reject them as well.
     metadata = doc.metadata or {}
+    # Owner-password-only PDFs can report is_encrypted == False while still
+    # carrying encryption metadata.  Re-saving them would silently remove
+    # encryption/permissions, so reject them too.
     if getattr(doc, "is_encrypted", False) or metadata.get("encryption"):
         doc.close()
         raise EncryptedPdfError(f"PDF 已加密或带有权限密码，暂不支持处理：{path}")
@@ -109,7 +197,7 @@ def _open_document(path: Path):
 
 @dataclass(frozen=True)
 class PdfInfo:
-    """Read-only information shown in the CLI summary and GUI."""
+    """Read-only information about one PDF."""
 
     path: Path
     total_pages: int
@@ -118,7 +206,7 @@ class PdfInfo:
 
 
 def analyze_pdf(pdf_path: str | Path) -> PdfInfo:
-    """Open a PDF, validate that it can be processed, and read its metadata."""
+    """Open and validate a PDF without changing it."""
 
     path = _normalise_pdf_path(pdf_path)
     doc = _open_document(path)
@@ -183,14 +271,14 @@ class PageLayout:
 
 
 def validate_layout(toc_page: int, body_page: int, total_pages: int) -> PageLayout:
-    """Convenience wrapper used by the GUI before starting a worker."""
+    """Validate and return a :class:`PageLayout`."""
 
     return PageLayout(toc_page=toc_page, body_page=body_page, total_pages=total_pages)
 
 
 @dataclass(frozen=True)
 class BookmarkItem:
-    """One PDF outline entry.  ``page`` is 1-based."""
+    """One PDF outline entry. ``page`` is 1-based."""
 
     level: int
     title: str
@@ -201,13 +289,11 @@ class BookmarkItem:
 
 
 def _pdf_text_string_escape(text: str) -> str:
-    """Return a PDF literal-string body containing UTF-16BE with a BOM.
+    """Encode text as a PDF literal-string body containing UTF-16BE + BOM.
 
-    ``Document.set_page_labels`` inserts its ``prefix`` argument unescaped
-    into a PDF literal string.  PyMuPDF passes a plain Python string through
-    as UTF-8 bytes, which is not a valid PDF *text string* for Chinese and is
-    displayed incorrectly by many readers.  Octal escapes let us place a
-    standards-compliant UTF-16BE string inside the same literal string.
+    PyMuPDF's ``set_page_labels`` inserts its prefix into a PDF literal string
+    without converting text encodings.  Passing raw UTF-8 would be invalid for
+    Chinese; octal escapes keep the resulting /P value standards-compliant.
     """
 
     payload = b"\xfe\xff" + text.encode("utf-16-be")
@@ -216,7 +302,7 @@ def _pdf_text_string_escape(text: str) -> str:
 
 @dataclass(frozen=True)
 class ProcessPlan:
-    """Immutable description of a planned bookmark operation."""
+    """Immutable description of one bookmark operation."""
 
     pdf_path: Path
     layout: PageLayout
@@ -226,12 +312,8 @@ class ProcessPlan:
 
     @property
     def generated_outline(self) -> tuple[BookmarkItem, ...]:
-        """The outline entries created by this tool (excluding old ones)."""
-
         layout = self.layout
-        items: list[BookmarkItem] = [
-            BookmarkItem(1, TOC_TITLE, layout.toc_page),
-        ]
+        items: list[BookmarkItem] = [BookmarkItem(1, TOC_TITLE, layout.toc_page)]
         if layout.toc_pages > 1:
             for offset in range(layout.toc_pages):
                 items.append(
@@ -239,7 +321,6 @@ class ProcessPlan:
                         2, f"{TOC_TITLE} {offset + 1}", layout.toc_page + offset
                     )
                 )
-
         items.append(BookmarkItem(1, BODY_TITLE, layout.body_page))
         for offset in range(layout.body_pages):
             items.append(
@@ -255,8 +336,6 @@ class ProcessPlan:
 
     @property
     def page_labels(self) -> tuple[dict, ...]:
-        """Page-label rules for ``Document.set_page_labels``."""
-
         return (
             {
                 "startpage": self.layout.toc_page - 1,
@@ -282,14 +361,14 @@ def _outline_from_doc(doc) -> tuple[BookmarkItem, ...]:
         raw = doc.get_toc(simple=True) or []
     except Exception as exc:
         raise PdfOperationError(f"读取原 PDF 书签失败：{exc}") from exc
+
     items = []
     for entry in raw:
         if len(entry) < 3:
             continue
         page = int(entry[2])
-        # External-URL outline entries have no page destination.  A simple
-        # set_toc() list cannot represent them, so preserving them is not
-        # possible (the README documents this limitation).
+        # External-URL outline entries have no page destination and cannot be
+        # represented by set_toc()'s simple list.
         if page < 1:
             continue
         items.append(BookmarkItem(int(entry[0]), str(entry[1]), page))
@@ -373,10 +452,10 @@ def _verify_temporary_pdf(
         raise PdfOperationError(
             f"写入后的 PDF 无法重新打开，已取消覆盖：{exc}"
         ) from exc
+
     try:
         if check.page_count != layout.total_pages:
             raise PdfOperationError("写入后的 PDF 页数发生变化，已取消覆盖原始文件。")
-        # A light structural check is enough to catch a failed outline write.
         written = check.get_toc(simple=True) or []
         if expected_outline and len(written) < len(expected_outline):
             raise PdfOperationError("写入后的 PDF 书签数量不正确，已取消覆盖原始文件。")
@@ -411,7 +490,7 @@ def _fsync_directory(directory: Path) -> None:
 
 
 def execute_plan(plan: ProcessPlan, *, backup: bool = False) -> ProcessResult:
-    """Apply *plan* to the PDF using a verified, atomic replacement."""
+    """Apply *plan* with a verified, atomic overwrite of the original PDF."""
 
     path = _normalise_pdf_path(plan.pdf_path)
     doc = _open_document(path)
@@ -419,8 +498,6 @@ def execute_plan(plan: ProcessPlan, *, backup: bool = False) -> ProcessResult:
         doc.close()
         raise PdfOperationError("PDF 在规划后发生了变化，请重新读取页码后再试。")
 
-    # Re-read the old outline at execution time so a race with another editor
-    # cannot silently drop entries when --keep-outline is requested.
     existing = _outline_from_doc(doc) if plan.keep_outline else ()
     generated = plan.generated_outline
     final_outline = existing + generated
@@ -441,9 +518,7 @@ def execute_plan(plan: ProcessPlan, *, backup: bool = False) -> ProcessResult:
 
         try:
             fd, temp_name = tempfile.mkstemp(
-                prefix=".pupdf-",
-                suffix=".pdf",
-                dir=str(path.parent),
+                prefix=".pupdf-", suffix=".pdf", dir=str(path.parent)
             )
             os.close(fd)
         except OSError as exc:
@@ -461,8 +536,8 @@ def execute_plan(plan: ProcessPlan, *, backup: bool = False) -> ProcessResult:
         _verify_temporary_pdf(Path(temp_name), plan.layout, final_outline)
 
         try:
-            source_mode = stat.S_IMODE(path.stat().st_mode)
-            os.chmod(temp_name, source_mode)
+            mode = stat.S_IMODE(path.stat().st_mode)
+            os.chmod(temp_name, mode)
         except OSError:
             pass
 
@@ -481,11 +556,9 @@ def execute_plan(plan: ProcessPlan, *, backup: bool = False) -> ProcessResult:
                 f"无法覆盖原 PDF，原文件未被修改。（{exc}）"
             ) from exc
 
-        temp_name = None  # successfully moved; do not delete it
+        temp_name = None
         _fsync_directory(path.parent)
     finally:
-        # Covers failures during set_toc/save/verification/replace.  The
-        # original was never touched, and no hidden temporary file is left.
         if temp_name is not None:
             try:
                 os.unlink(temp_name)
@@ -505,7 +578,7 @@ def process_pdf(
     backup: bool = False,
     dry_run: bool = False,
 ) -> ProcessResult:
-    """One-call API: validate, build a plan, and overwrite the PDF."""
+    """One-call API: validate, plan, and overwrite the PDF."""
 
     plan = build_plan(
         pdf_path,
@@ -519,15 +592,239 @@ def process_pdf(
     return execute_plan(plan, backup=backup)
 
 
+# ---------------------------------------------------------------------------
+# Command-line interface
+# ---------------------------------------------------------------------------
+
+
+def _configure_stdio() -> None:
+    """Make redirected output UTF-8 on every platform, especially Windows."""
+
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pupdf.py",
+        description=(
+            "为 PDF 创建逐页书签和页码标签，并直接覆盖原文件。\n"
+            "不指定 --pdf 时，自动使用当前目录（或 --dir）中唯一的 PDF。"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "示例：\n"
+            "  uv run pupdf.py\n"
+            "  uv run pupdf.py --toc-page 5 --body-page 7\n"
+            "  uv run pupdf.py --pdf D:/books/demo.pdf --toc-page 5 --body-page 7\n"
+            "  uv run pupdf.py --toc-page 5 --body-page 7 --dry-run\n"
+        ),
+    )
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--pdf", type=Path, metavar="PATH", help="要处理的 PDF；默认自动查找唯一 PDF"
+    )
+    source.add_argument(
+        "--dir", type=Path, metavar="DIR", help="自动查找 PDF 的目录（默认当前目录）"
+    )
+    parser.add_argument(
+        "--toc-page", type=int, metavar="N", help="目录页所在页码（从 1 开始）"
+    )
+    parser.add_argument(
+        "--body-page",
+        type=int,
+        metavar="N",
+        help="正文第 1 页所在页码（从 1 开始，必须大于目录页）",
+    )
+    parser.add_argument(
+        "--keep-outline",
+        action="store_true",
+        help="保留 PDF 原有书签，并把新书签追加到末尾（默认替换）",
+    )
+    parser.add_argument(
+        "--no-page-labels",
+        action="store_true",
+        help="只写书签，不写 PDF 页码标签",
+    )
+    parser.add_argument("--backup", action="store_true", help="覆盖前创建 .bak 备份")
+    parser.add_argument("--dry-run", action="store_true", help="只显示计划，不修改文件")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="发生未预期错误时显示完整 traceback",
+    )
+    return parser
+
+
+def _prompt_int(prompt: str, minimum: int, maximum: int) -> int:
+    while True:
+        try:
+            raw = input(prompt)
+        except EOFError as exc:
+            raise UserInputError(
+                "无法读取交互输入。请在命令中同时提供 --toc-page 和 --body-page。"
+            ) from exc
+        text = raw.strip()
+        if not text:
+            print("请输入一个页码。")
+            continue
+        try:
+            value = int(text)
+        except ValueError:
+            print("页码必须是整数。")
+            continue
+        if not minimum <= value <= maximum:
+            print(f"页码必须在 {minimum} 到 {maximum} 之间。")
+            continue
+        return value
+
+
+def _read_page_numbers(
+    info: PdfInfo, toc_page: int | None, body_page: int | None
+) -> tuple[int, int]:
+    total = info.total_pages
+    if total < 2:
+        raise UserInputError("PDF 至少需要 2 页，才能区分目录页和正文第1页。")
+    if toc_page is not None and not 1 <= toc_page < total:
+        raise UserInputError(
+            f"目录页 {toc_page} 无效；它必须在 1 到 {total - 1} 之间，"
+            "且正文第1页要排在它后面。"
+        )
+    if body_page is not None and not 1 <= body_page <= total:
+        raise UserInputError(
+            f"正文第1页 {body_page} 无效；它必须在 1 到 {total} 之间。"
+        )
+
+    if toc_page is None:
+        toc_page = _prompt_int(f"目录页所在页码（1-{total - 1}）：", 1, total - 1)
+    if body_page is None:
+        body_page = _prompt_int(
+            f"正文第1页所在页码（{toc_page + 1}-{total}）：",
+            toc_page + 1,
+            total,
+        )
+    return toc_page, body_page
+
+
+def _print_plan(info: PdfInfo, plan: ProcessPlan, *, keep_outline: bool) -> None:
+    layout = plan.layout
+    print(f"PDF      ：{info.path}")
+    print(f"总页数   ：{info.total_pages}")
+    print(
+        f"目录页   ：第 {layout.toc_page}-{layout.toc_end_page} 页"
+        f"（{layout.toc_pages} 页）"
+    )
+    print(
+        f"正文     ：第 {layout.body_page}-{layout.body_end_page} 页"
+        f"（{layout.body_pages} 页，书签“第1页”…“第{layout.body_pages}页”）"
+    )
+    print(f"新增书签 ：{plan.generated_count} 条")
+    if info.has_outline:
+        if keep_outline:
+            print(f"原有书签 ：保留（{len(plan.existing_outline)} 条，追加在末尾）")
+        else:
+            print("原有书签 ：将被替换")
+    print(
+        "页码标签 ：写入（目录 1…；正文 1…）"
+        if plan.write_page_labels
+        else "页码标签 ：不写入"
+    )
+    print()
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    _configure_stdio()
+    parser = _build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    try:
+        if args.pdf is not None:
+            pdf_path = args.pdf
+        else:
+            pdf_path = find_single_pdf(args.dir)
+
+        info = analyze_pdf(pdf_path)
+        toc_page, body_page = _read_page_numbers(info, args.toc_page, args.body_page)
+        plan = build_plan(
+            pdf_path,
+            toc_page,
+            body_page,
+            keep_outline=args.keep_outline,
+            write_page_labels=not args.no_page_labels,
+        )
+        _print_plan(info, plan, keep_outline=args.keep_outline)
+
+        result = process_pdf(
+            pdf_path,
+            toc_page,
+            body_page,
+            keep_outline=args.keep_outline,
+            write_page_labels=not args.no_page_labels,
+            backup=args.backup,
+            dry_run=args.dry_run,
+        )
+
+        if result.dry_run:
+            print("预览完成：未修改任何文件。")
+        else:
+            print(f"完成：已覆盖 {result.pdf_path}")
+            print(
+                f"写入 {result.generated_bookmarks} 条新书签，"
+                f"当前共 {result.total_bookmarks} 条书签。"
+            )
+            if result.page_labels_written:
+                print("已写入页码标签：目录页显示“目录 1…”；正文页显示 1…N。")
+            if result.backup_path is not None:
+                print(f"备份：{result.backup_path}")
+        return 0
+    except KeyboardInterrupt:
+        print("\n已取消。", file=sys.stderr)
+        return 130
+    except UserInputError as exc:
+        print(f"输入错误：{exc}", file=sys.stderr)
+        return 2
+    except PupdfError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        if args.debug:
+            traceback.print_exc()
+        else:
+            print(
+                f"发生未预期的错误：{exc}\n可使用 --debug 查看完整堆栈。",
+                file=sys.stderr,
+            )
+        return 1
+
+
 __all__ = [
     "BookmarkItem",
+    "DiscoveryError",
+    "EncryptedPdfError",
     "PageLayout",
     "PdfInfo",
+    "PdfOperationError",
     "ProcessPlan",
     "ProcessResult",
+    "PupdfError",
+    "UserInputError",
     "analyze_pdf",
     "build_plan",
     "execute_plan",
+    "find_pdfs",
+    "find_single_pdf",
     "process_pdf",
     "validate_layout",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
