@@ -1,329 +1,332 @@
-# 豆瓣丛书AA搜索工具 - 安装和运行教程
+# Pupdf - PDF 逐页书签工具
 
-## 一、环境准备
+给 PDF 批量创建“目录 + 正文页码”书签和页码标签，处理后**直接覆盖原 PDF**。
+只要求输入两个页码：
 
-### 1.1 安装uv（Python包管理工具）
+1. 目录页所在页；
+2. 正文第 1 页所在页。
+
+命令行版本面向 Linux，图形界面版本面向 Windows。两者共用同一套经过测试的
+PDF 处理核心，便于以后修改。
+
+## 界面预览
+
+![Pupdf 图形界面](docs/screenshot.png)
+
+> 截图为 Linux 测试环境（Xvfb）中的 Tk 界面，用于验证布局和交互；Windows 上
+> 使用系统原生控件主题，视觉细节会略有不同。
+
+## 功能
+
+- 自动查找程序目录中的唯一 PDF（不递归、扩展名不区分大小写）。
+- 根据两个页码自动推算：
+  - 目录页范围：`目录页` 到 `正文第1页 - 1`；
+  - 正文页范围：`正文第1页` 到最后一页，并从 1 开始编号。
+- 写入 PDF 大纲书签：
+  - `目录` → `目录 1`、`目录 2`……（只有一页目录时不生成冗余子项）；
+  - `正文` → `第1页`、`第2页`……直到最后一页。
+- 写入 PDF 页码标签：目录页显示“目录 1、目录 2…”，正文页显示“1、2…N”。
+- 使用隐藏临时文件 + 重新打开校验 + 原子替换，失败时原 PDF 不受影响。
+- 默认替换原有书签；可选保留原书签并追加。默认不生成 `.bak`，可按需开启。
+- Linux CLI 支持参数和交互输入；Windows GUI 支持双击、拖文件到 exe、文件选择框。
+
+### 书签示例
+
+假设 PDF 共 100 页：
+
+| 输入 | 值 |
+| --- | --- |
+| 目录页所在页码 | 5 |
+| 正文第 1 页所在页码 | 7 |
+
+生成结果：
+
+```text
+目录                 -> PDF 第 5 页
+  目录 1             -> PDF 第 5 页
+  目录 2             -> PDF 第 6 页
+正文                 -> PDF 第 7 页
+  第1页              -> PDF 第 7 页
+  第2页              -> PDF 第 8 页
+  ...
+  第94页             -> PDF 第 100 页
+```
+
+同时写入页码标签：
+
+- PDF 第 5-6 页显示 `目录 1`、`目录 2`；
+- PDF 第 7-100 页显示 `1` 到 `94`。
+
+> “目录页”和“正文第 1 页”都按 PDF 阅读器中显示的**物理页序号**填写，从 1 开始。
+> 如果正文前有封面、前言等页面，它们保持原样，不会被纳入正文编号。
+
+## 环境要求
+
+- Python 3.10+。开发验证使用 Python 3.12；Windows 构建建议使用 64 位 Python 3.12。
+- [PyMuPDF](https://pymupdf.readthedocs.io/)（安装时自动获取）。
+- Linux CLI：不需要图形库。
+- Linux GUI（可选）：`python3-tk` 和桌面环境。
+- Windows GUI：官方 Python 自带 Tkinter；打包后不需要安装 Python。
+
+## Linux 安装与使用
+
+为了不污染系统 Python，推荐使用项目内的虚拟环境：
 
 ```bash
-# Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 或使用pip安装
-pip install uv
+cd pupdf
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
-### 1.2 项目结构
-创建项目文件夹并准备以下文件：
+### 交互模式（最常用）
 
-```
-douban-aa-search/
-├── app.py           # 主程序文件（上面提供的代码）
-├── pyproject.toml   # 项目配置文件
-└── README.md        # 项目说明（可选）
-```
-
-## 二、配置文件
-
-### 2.1 创建 pyproject.toml
-
-```toml
-[project]
-name = "douban-aa-search"
-version = "0.2.0"
-description = "豆瓣丛书批量搜索AA工具"
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "fastapi>=0.116.1",
-    "uvicorn[standard]>=0.35.0",
-    "httpx>=0.28.1",
-    "beautifulsoup4>=4.13.0",
-    "lxml>=5.0.0",
-]
-
-[tool.uv]
-dev-dependencies = [
-    "debugpy>=1.8.0",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-```
-
-## 三、安装和运行
-
-### 3.1 初始化项目环境
+把唯一一个 PDF 放在当前目录：
 
 ```bash
-# 进入项目目录
-cd douban-aa-search
-
-# 使用uv创建虚拟环境并安装依赖
-uv venv
-uv pip install -r pyproject.toml
-
-# 或者一步到位
-uv sync
+cd /path/to/book-folder
+pupdf
 ```
 
-### 3.2 运行服务
+程序会提示：
 
-#### 方法1：直接使用uv运行
-```bash
-# 开发模式（支持热重载）
-uv run uvicorn app:app --reload --host 0.0.0.0 --port 8000
-
-# 生产模式
-uv run uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+```text
+目录页所在页码（1-99）：
+正文第1页所在页码（6-100）：
 ```
 
-#### 方法2：激活虚拟环境后运行
-```bash
-# Windows
-.venv\Scripts\activate
-python app.py
+请输入两个页码，确认后直接覆盖该 PDF。
 
-# macOS/Linux
-source .venv/bin/activate
-python app.py
-```
-
-#### 方法3：使用Python直接运行
-```bash
-# 如果app.py包含了 if __name__ == "__main__": 部分
-uv run python app.py
-```
-
-## 四、Docker部署（可选）
-
-### 4.1 创建 Dockerfile
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# 安装uv
-RUN pip install uv
-
-# 复制项目文件
-COPY pyproject.toml app.py ./
-
-# 安装依赖
-RUN uv venv && uv pip install -r pyproject.toml
-
-# 暴露端口
-EXPOSE 8000
-
-# 运行应用
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### 4.2 构建和运行Docker容器
+### 非交互模式
 
 ```bash
-# 构建镜像
-docker build -t douban-aa-search .
+# 自动查找当前目录的唯一 PDF
+pupdf --toc-page 5 --body-page 7
 
-# 运行容器
-docker run -d -p 8000:8000 --name douban-search douban-aa-search
+# 指定 PDF
+pupdf --pdf /data/books/demo.pdf --toc-page 5 --body-page 7
+
+# 先预览，不修改文件
+pupdf --toc-page 5 --body-page 7 --dry-run
+
+# 保留原书签并追加；覆盖前生成 demo.pdf.bak
+pupdf --toc-page 5 --body-page 7 --keep-outline --backup
+
+# 只写书签，不写页码标签
+pupdf --toc-page 5 --body-page 7 --no-page-labels
 ```
 
-## 五、使用说明
+也可以使用模块方式运行：
 
-### 5.1 访问服务
-服务启动后，在浏览器访问：
-- 本地访问：`http://localhost:8000`
-- 远程访问：`http://你的服务器IP:8000`
-
-### 5.2 功能使用
-
-#### 单个丛书搜索
-1. 输入豆瓣丛书URL，如：`https://book.douban.com/series/1300`
-2. 点击"合并搜索结果"
-3. 等待处理完成（会显示进度）
-4. 自动跳转到结果页面
-
-#### 多个丛书批量搜索
-1. 输入多个URL，用逗号分隔：
-   ```
-   https://book.douban.com/series/1300,https://book.douban.com/series/1301,https://book.douban.com/series/1302
-   ```
-2. 系统会依次处理，每个series之间延时60秒
-3. 进度页面会显示当前处理到第几个series
-4. 全部完成后显示合并的搜索结果
-
-#### ISBN直接搜索
-1. 输入ISBN号码，逗号或空格分隔
-2. 点击搜索，直接返回结果（无需等待）
-
-## 六、常见问题解决
-
-### 6.1 端口被占用
 ```bash
-# 更改端口为8080
-uv run uvicorn app:app --port 8080
+python -m pupdf --toc-page 5 --body-page 7
 ```
 
-### 6.2 无法访问外网
-检查防火墙设置：
-```bash
-# Linux防火墙开放端口
-sudo ufw allow 8000
+### 命令行参数
 
-# 或使用iptables
-sudo iptables -A INPUT -p tcp --dport 8000 -j ACCEPT
+```text
+--pdf PATH            指定 PDF（默认自动查找唯一 PDF）
+--dir DIR             自动查找 PDF 的目录（默认当前目录；也可配合 --gui）
+--toc-page N          目录页所在页码
+--body-page N         正文第 1 页所在页码
+--keep-outline        保留并追加原书签（默认替换）
+--no-page-labels      不写入页码标签
+--backup              覆盖前创建 <原名>.pdf.bak
+--dry-run             只显示计划，不修改
+--gui                 启动图形界面
+--debug               未预期错误时打印完整 traceback
+--version             显示版本
 ```
 
-### 6.3 豆瓣访问受限
-- 程序已包含Cookie获取和重试机制
-- 如果持续403错误，可能需要：
-  1. 更换服务器IP
-  2. 增加请求延时
-  3. 使用代理
+退出码：`0` 成功；`1` PDF/文件错误；`2` 输入或参数错误；`130` 用户取消。
 
-### 6.4 内存占用问题
-任务结果默认存储在内存中，会自动清理2小时前的任务。
-如需长期运行，建议：
-1. 定期重启服务
-2. 或修改代码使用Redis存储
+## Windows 可执行程序
 
-## 七、性能优化建议
+Windows 版构建产物是一个无控制台的 GUI 程序 `Pupdf.exe`。由于 PyInstaller
+不能从 Linux 直接交叉编译 Windows exe，请在 Windows 上构建，或使用仓库中的
+GitHub Actions 工作流生成构建产物。
 
-### 7.1 生产环境配置
-```bash
-# 使用多进程提升性能
-uv run uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+> 本仓库不附带预编译的 exe。当前仓库中的 Linux 源码、Tk 界面和 PyInstaller
+> one-file 结构已实际验证；Windows 专用构建需要按下面步骤在 Windows 或 CI 上执行。
 
-# 或使用gunicorn
-uv pip install gunicorn
-uv run gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+### 方式一：在 Windows 上构建
+
+1. 安装 64 位 Python 3.10+（建议 3.12），安装时保留 Tcl/Tk 组件。
+2. 解压源码，进入项目目录。
+3. 双击运行：
+
+```bat
+scripts\build_windows.bat
 ```
 
-### 7.2 使用Nginx反向代理
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
+脚本会在项目内创建隔离环境 `.venv-build`，安装依赖、运行测试，并用
+PyInstaller 构建单文件 GUI 程序：
 
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-    }
-}
+```text
+dist\Pupdf.exe
 ```
 
-## 八、监控和日志
+也可以手动执行：
 
-### 8.1 查看运行日志
-```bash
-# 实时查看日志
-uv run uvicorn app:app --log-level info
-
-# 保存日志到文件
-uv run uvicorn app:app --log-level info 2>&1 | tee app.log
+```bat
+py -3 -m venv .venv-build
+.venv-build\Scripts\activate
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python -m PyInstaller --noconfirm --clean pupdf.spec
 ```
 
-### 8.2 使用systemd管理（Linux）
+### 方式二：GitHub Actions
 
-创建服务文件 `/etc/systemd/system/douban-search.service`:
+推送代码后，在 Actions 页面运行 `windows-build` 工作流，下载
+`Pupdf-windows` artifact，其中包含 `Pupdf.exe`。
 
-```ini
-[Unit]
-Description=Douban AA Search Service
-After=network.target
+### 使用方式
 
-[Service]
-Type=exec
-User=your-username
-WorkingDirectory=/path/to/douban-aa-search
-ExecStart=/usr/local/bin/uv run uvicorn app:app --host 0.0.0.0 --port 8000
-Restart=on-failure
+**双击打开**
 
-[Install]
-WantedBy=multi-user.target
+1. 把 `Pupdf.exe` 和一个 PDF 放在同一个文件夹；
+2. 双击 `Pupdf.exe`；
+3. 程序自动显示该 PDF；
+4. 输入目录页和正文第 1 页页码，点击“生成书签并覆盖 PDF”。
+
+**把 PDF 拖到 exe 上**
+
+1. 从资源管理器把任意位置的 PDF 拖到 `Pupdf.exe` 图标上；
+2. 程序带该文件路径启动（不受 exe 所在目录限制）；
+3. 输入两个页码并生成。
+
+如果程序目录中有多个 PDF，程序不会猜测，界面会提示点击“选择…”指定文件。
+Windows 版启动时会短暂解压运行时文件，这是 PyInstaller 单文件程序的正常现象。
+
+## 行为与安全说明
+
+- **覆盖目标**：始终覆盖打开的那个 PDF；不会另存新文件。可用 `--backup` 或
+  复制原文件后操作。
+- **原子写入**：先写同目录隐藏临时文件，重新打开并校验页数/书签数量，再用
+  `os.replace` 替换原文件。任何一步报错都会删除临时文件，原文件保持不变。
+- **文件锁**：Windows 阅读器打开 PDF 时可能锁定文件。覆盖失败时请关闭阅读器
+  再重试。
+- **加密 PDF**：带用户密码或权限密码的 PDF 会拒绝处理，避免在重写时丢失加密
+  或权限设置。
+- **数字签名**：任何 PDF 修改都会使已有数字签名失效。
+- **原书签**：默认替换。若原书签需要保留，请使用 `--keep-outline`；GUI 在检测
+  到已有书签时会二次确认。保留模式会保留标题、层级和页目标，但无法保留指向
+  外部 URL 的书签（PDF 大纲的简单列表无法表达外部目标）。
+- **页码标签**：使用标准 PDF `/PageLabels`，中文前缀以 UTF-16BE 写入，兼容
+  主流阅读器；即使阅读器不显示页码标签，大纲书签仍然有效。
+- **大文件**：处理需要重写整个 PDF，页数很多时需要一些时间；GUI 在后台线程
+  执行，窗口不会假死。
+- **自动查找**：只查一层目录，不递归；忽略本工具自己的 `.pupdf-*.pdf` 临时文件。
+
+## 项目结构
+
+```text
+src/pupdf/
+  core.py          PDF 分析、页码校验、书签/页码标签、原子覆盖（稳定 API）
+  discovery.py     唯一 PDF 查找、拖放参数解析、GUI 启动选择
+  cli.py           Linux 命令行界面和交互提示
+  gui.py           Tkinter 延迟加载入口
+  gui_app.py       Windows/Tk 图形界面
+  errors.py        面向用户的异常类型
+packaging/
+  windows_launcher.py   Windows GUI exe 入口，负责无控制台错误提示
+pupdf.spec         PyInstaller 单文件构建配置
+scripts/
+  build_windows.bat    一键 Windows 构建脚本
+tests/            核心、CLI、文件查找、GUI 冒烟测试
+docs/DEVELOPMENT.md   本次编码与调试过程记录
 ```
 
-启动服务：
-```bash
-sudo systemctl daemon-reload
-sudo systemctl start douban-search
-sudo systemctl enable douban-search  # 开机自启
-sudo systemctl status douban-search  # 查看状态
-```
+## 二次开发接口
 
-## 九、API测试
+核心逻辑与界面解耦，推荐直接调用 `pupdf.core`：
 
-### 9.1 命令行测试
-```bash
-# 测试健康检查
-curl http://localhost:8000/healthz
-
-# 获取任务状态（替换task_id）
-curl http://localhost:8000/task/your-task-id
-
-# 使用HTTPie（更友好的输出）
-pip install httpie
-http GET localhost:8000/healthz
-```
-
-### 9.2 Python测试脚本
 ```python
-import requests
+from pupdf.core import analyze_pdf, build_plan, execute_plan, process_pdf
 
-# 提交搜索任务
-response = requests.get("http://localhost:8000/search", params={
-    "series_url": "https://book.douban.com/series/1300"
-})
-print(response.status_code)
+info = analyze_pdf("book.pdf")
+print(info.total_pages, info.has_outline)
+
+# 一步完成（会覆盖原文件）
+result = process_pdf("book.pdf", toc_page=5, body_page=7, backup=True)
+print(result.generated_bookmarks)
+
+# 或者先规划、预览，再执行
+plan = build_plan("book.pdf", toc_page=5, body_page=7, keep_outline=True)
+print(plan.generated_outline)
+print(plan.page_labels)
+result = execute_plan(plan, backup=False)
 ```
 
-## 十、更新和维护
+主要数据类：
 
-### 10.1 更新代码后重新部署
-```bash
-# 停止当前服务
-# 如果使用systemd
-sudo systemctl stop douban-search
+- `PageLayout`：已校验的 1-based 页码布局，提供 `toc_pages`、`body_pages`。
+- `PdfInfo`：页数、标题、是否已有大纲。
+- `ProcessPlan`：不可变的处理计划，包含 `final_outline` 和 `page_labels`。
+- `ProcessResult`：实际写入结果，可用于 CLI/GUI 展示。
 
-# 更新代码
-git pull  # 如果使用git
+要调整书签层级或命名，修改 `ProcessPlan.generated_outline`；要调整页码标签，
+修改 `ProcessPlan.page_labels`。两者都有单元测试覆盖。异常统一继承
+`pupdf.errors.PupdfError`，界面层只负责转换成中文提示。
 
-# 更新依赖
-uv sync
-
-# 重启服务
-sudo systemctl start douban-search
-```
-
-### 10.2 备份任务数据（如果需要）
-由于任务数据存储在内存中，重启会丢失。
-如需持久化，可以修改代码使用数据库或Redis。
-
----
-
-## 快速开始命令汇总
+## 测试
 
 ```bash
-# 1. 安装uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. 创建项目
-mkdir douban-aa-search && cd douban-aa-search
-
-# 3. 创建文件（app.py和pyproject.toml）
-# 复制上述代码到对应文件
-
-# 4. 安装并运行
-uv sync
-uv run uvicorn app:app --reload --host 0.0.0.0 --port 8000
-
-# 5. 访问 http://localhost:8000
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
+
+测试覆盖：
+
+- 书签分组、单页目录、书签页码、原书签替换/保留、幂等性；
+- 页码标签、中文 UTF-16BE 前缀、关闭页码标签；
+- 非法页码、加密 PDF、损坏 PDF、扩展名错误；
+- 覆盖失败/写入失败时原文件不变、临时文件被清理；
+- 自动查找唯一/多个 PDF、拖放参数解析、冻结 exe 的目录判断；
+- CLI 参数、交互输入、dry-run、退出码；
+- Tk GUI 冒烟测试（无显示环境时自动跳过）。
+
+本次开发的实际测试输出和排错记录见
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+## 常见问题
+
+**提示“目录中有多个 PDF 文件”**
+
+自动模式只处理唯一 PDF。只保留一个，或用 `--pdf` / GUI 的“选择…”指定。
+
+**提示“正文第1页必须大于目录页”**
+
+两个输入之间至少要有一页目录。请确认输入的是 PDF 物理页码，不是印刷页码。
+
+**覆盖失败，提示文件被占用**
+
+关闭 Adobe Acrobat、Edge、SumatraPDF 等正在打开该文件的程序，并检查文件是否
+只读。失败不会损坏原文件；重新运行即可。
+
+**Linux 上 `pupdf --gui` 提示缺少 Tkinter**
+
+```bash
+sudo apt install python3-tk
+```
+
+无桌面/无 X11 的服务器请直接使用 CLI。
+
+**Windows 提示 SmartScreen/杀毒软件**
+
+本地构建的 exe 没有代码签名，可能触发警告。可自行签名，或从源码运行
+`python -m pupdf --gui`。
+
+## 已知限制
+
+- 不处理带密码的 PDF。
+- 不解析目录页上的文字来确定章节，只根据用户给出的两个页码生成逐页书签。
+- 重写 PDF 可能改变文件内部结构，不适合需要保留数字签名或严格 PDF/A 认证的文件。
+- 自动查找只针对程序目录，不扫描子目录。
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。

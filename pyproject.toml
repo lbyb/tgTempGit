@@ -1,23 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "douban-aa-search"
-version = "0.3.0"
-description = "豆瓣丛书批量搜索AA工具（前后端分离架构）"
+name = "pupdf"
+version = "0.1.0"
+description = "Create per-page PDF bookmarks and page labels from TOC/body start pages"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "pupdf contributors" }]
+keywords = ["pdf", "bookmark", "outline", "page-label", "pymupdf"]
 dependencies = [
-    "fastapi>=0.116.1",
-    "uvicorn[standard]>=0.35.0",
-    "httpx>=0.28.1",
-    "beautifulsoup4>=4.13.0",
-    "lxml>=5.0.0",
-    "requests>=2.32.5",
-    "playwright>=1.45.0",
+    "PyMuPDF==1.24.14",
 ]
 
-[tool.uv]
-dev-dependencies = [
-    "debugpy>=1.8.0",
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pyinstaller>=6.10,<7",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["backend"]
+[project.scripts]
+pupdf = "pupdf.cli:main"
+
+[project.gui-scripts]
+pupdf-gui = "pupdf.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+# The GUI/CLI deliberately catch broad exceptions at the outermost boundary
+# so a windowed Windows build can always show an error instead of vanishing.
+ignore = ["BLE001", "S110"]

@@ -1,43 +1,29 @@
-# Python
+# Local Python environments
+.venv/
+.venv-build/
+.venv-gui/
+env/
+venv/
+
+# Python caches and build metadata
 __pycache__/
 *.py[cod]
-*.pyo
 *.egg-info/
-dist/
-build/
-*.egg
-.venv/
-venv/
-pip-log.txt
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# Node / Frontend
-node_modules/
+build/
 dist/
-.vite/
-*.local
+*.spec.bak
 
-# Environment
-.env
-.env.*
-!.env.example
+# Local experiments / generated artifacts
+.scratch/
+*.pdf.bak
+pupdf-error.log
+pupdf-startup-error.log
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
+# OS/editor noise
 .DS_Store
 Thumbs.db
-
-# Docker
-*.tar
-
-# opencode runtime (session data, not config)
-.opencode/sessions/
-.opencode/logs/
+.idea/
+.vscode/
