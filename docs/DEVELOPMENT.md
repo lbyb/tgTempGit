@@ -21,6 +21,15 @@
 
 新的核心入口只有一个文件：[`pupdf.py`](../pupdf.py)。
 
+随后根据“书签去层级、去描述、prefix 规范化”的要求，又调整了输出：
+
+- 大纲改为平铺：一个 `目录` + 正文 `1…N`；
+- 去掉 `第N页`、`目录 N`、`正文` 等文字；
+- 页面标签按前置页字母/罗马、目录罗马、正文阿拉伯数字生成；
+- 正文不再补零，`1` 不会写成 `01`/`001`。
+
+具体规则见第 3 节。
+
 ## 2. 单文件结构
 
 脚本顶部使用 PEP 723 声明运行环境：
@@ -47,12 +56,30 @@ uv 可以下载受管理的 Python，PyMuPDF 使用官方 Windows wheel。
 5. CLI 解析、交互提示、计划打印和退出码；
 6. `__all__`：显式公开可复用接口。
 
-## 3. 保留的 PDF 行为
+## 3. 书签与页码标签规范
 
-- 大纲：`目录` → `目录 1…k`，`正文` → `第1页…第N页`；
-- 页码标签：目录页 `目录 1…k`，正文页 `1…N`；
-- 中文 `/PageLabels` 前缀使用 UTF-16BE + BOM，以八进制转义写入：
-  `/P <FEFF76EE5F550020>`；
+最新版本按以下规则输出：
+
+- 大纲完全平铺，不再有二级书签：
+  - 只生成一个 `目录` 书签，指向目录范围的首页；
+  - 正文每一页一个一级书签，标题直接是 `1`、`2`…`N`；
+  - 不生成 `目录 1`、`第1页`、`正文` 之类的层级或描述。
+- 页码标签全部改为每页显式 prefix，不使用自动编号拼接：
+  - 目录前的前置页：默认 `A`、`B`、`C`…；如果原标签的 style 是罗马数字，
+    或 prefix 明确是 `i`、`ii`、`!` 等罗马形式，则改为 `i`、`ii`…；
+  - 目录页：罗马数字 `i`、`ii`…；
+  - 正文及之后：阿拉伯数字 `1`、`2`…`N`，不补零；
+  - 保留 `.pdg` 清理和 category（`cov`/`bok`/`leg`/`fow`）识别。
+- 前置页标签类型由 `_front_label_kinds` 读取原 PDF 得到：
+  - 优先看 PDF page-label 的 `style`（`r`/`R`/`A`/`a`）；
+  - style 为空时看 prefix 开头的字母/罗马记号；
+  - `cov/bok/leg/fow` 按前置页字母处理；
+  - 无法判断时默认按字母处理。
+- 页码标签由 `_page_labels_for_layout` 生成：
+  - 字母计数与正文数字独立；
+  - 罗马计数在“前置页罗马标记 + 目录页”之间连续；
+  - 每页生成 `{'startpage': i, 'prefix': ..., 'style': '', 'firstpagenum': 1}`，
+    避免旧 style 继续自动拼接数字。
 - 写入流程：内存修改 → 同目录隐藏临时文件 → 关闭原文档 → 重新打开校验
   → 可选 `.bak` → `os.replace` 原子覆盖；
 - 保存/校验/替换任意一步报错，都会删除临时文件，原 PDF 不变；
@@ -111,10 +138,12 @@ python /path/to/pupdf.py
 
 新增/保留的测试：
 
-- `--dir` 查找；
-- 默认当前目录查找；
+- 平铺书签、目录只出现一次、正文书签为 `1…N`；
+- 前置页 A/B/C 与罗马数字识别；
+- 目录页罗马数字、正文阿拉伯数字、无前导零；
+- `--dir` 查找、默认当前目录查找；
 - 单文件脚本的 `--version`、交互提示和退出码；
-- 原有书签、页码标签、原子覆盖、加密/损坏 PDF 等全部回归测试。
+- 原书签替换/保留、原子覆盖、加密/损坏 PDF 等回归测试。
 
 ## 6. 实际验证
 
@@ -130,7 +159,7 @@ PyMuPDF 1.24.14
 
 ```text
 $ uv run pupdf.py --version
-pupdf.py 0.2.0
+pupdf.py 0.3.0
 ```
 
 首次运行会下载/安装 PyMuPDF 到 uv 管理的隔离环境；系统 Python 没有变化。
@@ -150,14 +179,14 @@ uv run --with pytest --with pymupdf==1.24.14 pytest -q
 结果（Python 3.12）：
 
 ```text
-..............................................                           [100%]
-46 passed
+..........................................................               [100%]
+58 passed
 ```
 
-Python 3.13 也执行了同一套测试：
+Python 3.13 也通过了同一套测试：
 
 ```text
-46 passed in 4.05s
+58 passed in 4.04s
 ```
 
 ### 6.3 端到端 PDF 验证
@@ -172,37 +201,44 @@ uv run /root/pupdf/pupdf.py --toc-page 2 --body-page 4
 实际输出摘要：
 
 ```text
-PDF      ：/tmp/uvdemo/demo.pdf
-总页数   ：10
-目录页   ：第 2-3 页（2 页）
-正文     ：第 4-10 页（7 页，书签“第1页”…“第7页”）
-新增书签 ：11 条
+PDF      ：/tmp/pupdf-label-demo/demo.pdf
+总页数   ：12
+目录页   ：第 3-4 页（2 页）
+正文     ：第 5-12 页（8 页，书签“1”…“8”）
+新增书签 ：9 条（1 条“目录” + 8 条正文页码）
 
-完成：已覆盖 /tmp/uvdemo/demo.pdf
-写入 11 条新书签，当前共 11 条书签。
+完成：已覆盖 /tmp/pupdf-label-demo/demo.pdf
+写入 9 条新书签，当前共 9 条书签。
 ```
 
 重新打开 PDF 检查：
 
 ```text
-pages: 10
-toc: [[1, '目录', 2], [2, '目录 1', 2], [2, '目录 2', 3],
-      [1, '正文', 4], [2, '第1页', 4]]
-labels: [{'startpage': 1, 'prefix': '<FEFF76EE5F550020>', ...},
-         {'startpage': 3, 'prefix': '', ...}]
+labels:
+1 {'startpage': 0, 'prefix': 'A'} display='A'
+2 {'startpage': 1, 'prefix': 'B'} display='B'
+3 {'startpage': 2, 'prefix': 'i'} display='i'
+4 {'startpage': 3, 'prefix': 'ii'} display='ii'
+5 {'startpage': 4, 'prefix': '1'} display='1'
+...
+12 {'startpage': 11, 'prefix': '8'} display='8'
+
+toc: [[1, '目录', 3],
+      [1, '1', 5], [1, '2', 6], ..., [1, '8', 12]]
 ```
 
-说明目录页和正文页的页码标签都写入了，中文前缀编码正确。
+说明书签已平铺、正文标题无“第/页”、页码没有前导零。
 
 另外用独立的 qpdf 绑定 pikepdf 做结构校验：
 
 ```text
 syntax: []
-labels: [2, {"/P": "目录 ", "/S": "/D"}, 4, {"/S": "/D"}]
-outline: [('目录', 2), ('正文', 8)]
+labels: [0 {P: A}, 1 {P: B}, 2 {P: i}, 3 {P: ii}, 4 {P: 1}, ...]
+outline: [('目录', 0), ('1', 0), ('2', 0), ..., ('8', 0)]
 ```
 
-``/PageLabels`` 中的中文可以被独立解析器正确读取，PDF 语法检查无错误。
+说明 PDF 语法正常，`/PageLabels` 是 `A`/`B`/`i`/`ii`/`1` 这类显式前缀，
+大纲是平铺结构。
 
 ### 6.4 代码检查
 
@@ -239,7 +275,7 @@ uvx ruff format --check pupdf.py tests
 ## 8. 后续修改建议
 
 - 改书签命名/层级：`ProcessPlan.generated_outline`；
-- 改页码标签：`ProcessPlan.page_labels` 和 `TOC_PREFIX`；
+- 改页码标签：`_page_labels_for_layout` 和 `_classify_front_label`；
 - 改 PDF 发现规则：`find_pdfs`；
 - 改交互提示：`_read_page_numbers` / `_prompt_int`；
 - 增加批量处理：遍历 `find_pdfs` 结果，但必须明确备份和覆盖策略；

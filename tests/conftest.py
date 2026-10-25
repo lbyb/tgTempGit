@@ -23,6 +23,7 @@ def pdf_factory(tmp_path: Path):
         name: str = "sample.pdf",
         pages: int = 12,
         outline: list[list] | None = None,
+        page_labels: list[dict] | None = None,
         title: str | None = None,
         user_password: str | None = None,
         owner_password: str | None = None,
@@ -47,6 +48,8 @@ def pdf_factory(tmp_path: Path):
             doc.set_metadata({"title": title})
         if outline:
             doc.set_toc(outline)
+        if page_labels:
+            doc.set_page_labels(page_labels)
 
         save_kwargs = {}
         if user_password is not None:

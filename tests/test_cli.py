@@ -34,7 +34,7 @@ def run_cli(args: list[str], *, cwd: Path, stdin: str | None = None):
 def test_version_and_help(tmp_path):
     version = run_cli(["--version"], cwd=tmp_path)
     assert version.returncode == 0
-    assert "pupdf.py 0.2.0" in version.stdout
+    assert "pupdf.py 0.3.0" in version.stdout
 
     help_result = run_cli(["--help"], cwd=tmp_path)
     assert help_result.returncode == 0
@@ -57,12 +57,21 @@ def test_noninteractive_process_with_explicit_pdf(pdf_factory, tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "完成：已覆盖" in result.stdout
-    assert "写入 10 条新书签" in result.stdout
+    assert "写入 7 条新书签" in result.stdout
     assert "页码标签" in result.stdout
 
     with fitz.open(pdf) as doc:
         assert doc.page_count == 10
         assert doc[4].get_label() == "1"
+        assert [entry[1] for entry in doc.get_toc()] == [
+            "目录",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+        ]
 
 
 def test_discovers_single_pdf_in_working_directory(pdf_factory, tmp_path):

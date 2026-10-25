@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import stat
 import sys
@@ -33,11 +34,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 TOC_TITLE = "目录"
-BODY_TITLE = "正文"
-TOC_PREFIX = "目录 "
 
 try:  # PyMuPDF >= 1.24 prefers the "pymupdf" import name.
     import pymupdf as fitz
@@ -288,16 +287,165 @@ class BookmarkItem:
         return [self.level, self.title, self.page]
 
 
-def _pdf_text_string_escape(text: str) -> str:
-    """Encode text as a PDF literal-string body containing UTF-16BE + BOM.
+_ROMAN_PATTERN = re.compile(
+    r"m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})"
+)
+_ROMAN_VALUES = (
+    (1000, "m"),
+    (900, "cm"),
+    (500, "d"),
+    (400, "cd"),
+    (100, "c"),
+    (90, "xc"),
+    (50, "l"),
+    (40, "xl"),
+    (10, "x"),
+    (9, "ix"),
+    (5, "v"),
+    (4, "iv"),
+    (1, "i"),
+)
 
-    PyMuPDF's ``set_page_labels`` inserts its prefix into a PDF literal string
-    without converting text encodings.  Passing raw UTF-8 would be invalid for
-    Chinese; octal escapes keep the resulting /P value standards-compliant.
+
+def _to_roman(number: int) -> str:
+    """Return a lowercase Roman numeral; 1 -> i, 4 -> iv, 9 -> ix."""
+
+    if number < 1:
+        return ""
+    result = []
+    remainder = number
+    for value, symbol in _ROMAN_VALUES:
+        while remainder >= value:
+            result.append(symbol)
+            remainder -= value
+    return "".join(result)
+
+
+def _to_letters(index: int) -> str:
+    """Return A, B, … Z, AA, AB, … for a zero-based index."""
+
+    result = []
+    number = index + 1
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        result.append(chr(ord("A") + remainder))
+    return "".join(reversed(result))
+
+
+def _is_roman_token(token: str) -> bool:
+    return bool(token) and bool(_ROMAN_PATTERN.fullmatch(token.lower()))
+
+
+def _classify_front_label(prefix: str, style: str) -> str:
+    """Classify a front-matter page label as ``letter`` or ``roman``.
+
+    The style field is the most reliable signal because it comes directly from
+    the PDF page-label rule.  For tools that leave ``style`` empty and put the
+    marker in ``prefix``, a leading ASCII token is inspected as a fallback.
     """
 
-    payload = b"\xfe\xff" + text.encode("utf-16-be")
-    return "".join(f"\\{byte:03o}" for byte in payload)
+    clean = re.sub(r"\.pdg$", "", prefix or "", flags=re.IGNORECASE).strip()
+    style = (style or "").strip()
+
+    if style in {"r", "R"}:
+        return "roman"
+    if style in {"A", "a"}:
+        return "letter"
+    if clean.startswith("!"):
+        return "roman"
+    if re.match(r"^(?:cov|bok|leg|fow)", clean, flags=re.IGNORECASE):
+        return "letter"
+
+    token_match = re.match(r"^[A-Za-z]+", clean)
+    if token_match:
+        token = token_match.group(0)
+        # Lowercase Roman, multi-letter Roman and I/V/X are unambiguous.
+        # A single uppercase "A"/"B"/"C" is treated as a front-matter letter.
+        if _is_roman_token(token) and (
+            token.islower() or len(token) > 1 or token in {"I", "V", "X"}
+        ):
+            return "roman"
+        return "letter"
+    return "letter"
+
+
+def _front_label_kinds(doc, count: int) -> tuple[str, ...]:
+    """Inspect the existing labels for pages before the TOC."""
+
+    if count <= 0:
+        return ()
+    try:
+        rules = sorted(
+            doc.get_page_labels() or [],
+            key=lambda item: int(item.get("startpage", 0)),
+        )
+    except Exception:
+        rules = []
+
+    kinds: list[str] = []
+    active: dict | None = None
+    rule_index = 0
+    for page_index in range(count):
+        while (
+            rule_index < len(rules)
+            and int(rules[rule_index].get("startpage", 0)) <= page_index
+        ):
+            active = rules[rule_index]
+            rule_index += 1
+        if active is None:
+            kinds.append("letter")
+        else:
+            kinds.append(
+                _classify_front_label(
+                    str(active.get("prefix", "")), str(active.get("style", ""))
+                )
+            )
+    return tuple(kinds)
+
+
+def _page_labels_for_layout(
+    layout: PageLayout, front_label_kinds: tuple[str, ...]
+) -> tuple[dict, ...]:
+    """Build explicit per-page labels: A…, i…, 1….
+
+    Every page gets an explicit prefix with an empty numbering style.  This
+    keeps the resulting page labels exactly as normalized instead of allowing
+    a continuing style to append hidden automatic numbers.
+    """
+
+    labels: list[dict] = []
+    letter_number = 0
+    roman_number = 0
+    body_number = 1
+
+    for page in range(1, layout.total_pages + 1):
+        if page < layout.toc_page:
+            index = page - 1
+            kind = (
+                front_label_kinds[index] if index < len(front_label_kinds) else "letter"
+            )
+            if kind == "roman":
+                roman_number += 1
+                prefix = _to_roman(roman_number)
+            else:
+                letter_number += 1
+                prefix = _to_letters(letter_number - 1)
+        elif page < layout.body_page:
+            roman_number += 1
+            prefix = _to_roman(roman_number)
+        else:
+            prefix = str(body_number)
+            body_number += 1
+
+        labels.append(
+            {
+                "startpage": page - 1,
+                "prefix": prefix,
+                "style": "",
+                "firstpagenum": 1,
+            }
+        )
+    return tuple(labels)
 
 
 @dataclass(frozen=True)
@@ -307,25 +455,18 @@ class ProcessPlan:
     pdf_path: Path
     layout: PageLayout
     existing_outline: tuple[BookmarkItem, ...] = field(default_factory=tuple)
+    front_label_kinds: tuple[str, ...] = field(default_factory=tuple)
     keep_outline: bool = False
     write_page_labels: bool = True
 
     @property
     def generated_outline(self) -> tuple[BookmarkItem, ...]:
+        """A flat outline: one 目录 entry, then 1, 2, … for body pages."""
+
         layout = self.layout
         items: list[BookmarkItem] = [BookmarkItem(1, TOC_TITLE, layout.toc_page)]
-        if layout.toc_pages > 1:
-            for offset in range(layout.toc_pages):
-                items.append(
-                    BookmarkItem(
-                        2, f"{TOC_TITLE} {offset + 1}", layout.toc_page + offset
-                    )
-                )
-        items.append(BookmarkItem(1, BODY_TITLE, layout.body_page))
         for offset in range(layout.body_pages):
-            items.append(
-                BookmarkItem(2, f"第{offset + 1}页", layout.body_page + offset)
-            )
+            items.append(BookmarkItem(1, str(offset + 1), layout.body_page + offset))
         return tuple(items)
 
     @property
@@ -336,20 +477,7 @@ class ProcessPlan:
 
     @property
     def page_labels(self) -> tuple[dict, ...]:
-        return (
-            {
-                "startpage": self.layout.toc_page - 1,
-                "prefix": _pdf_text_string_escape(TOC_PREFIX),
-                "style": "D",
-                "firstpagenum": 1,
-            },
-            {
-                "startpage": self.layout.body_page - 1,
-                "prefix": "",
-                "style": "D",
-                "firstpagenum": 1,
-            },
-        )
+        return _page_labels_for_layout(self.layout, self.front_label_kinds)
 
     @property
     def generated_count(self) -> int:
@@ -392,10 +520,12 @@ def build_plan(
     try:
         layout = PageLayout(toc_page=toc, body_page=body, total_pages=doc.page_count)
         existing = _outline_from_doc(doc) if keep_outline else ()
+        front_kinds = _front_label_kinds(doc, layout.toc_page - 1)
         return ProcessPlan(
             pdf_path=path,
             layout=layout,
             existing_outline=existing,
+            front_label_kinds=front_kinds,
             keep_outline=keep_outline,
             write_page_labels=write_page_labels,
         )
@@ -724,16 +854,19 @@ def _print_plan(info: PdfInfo, plan: ProcessPlan, *, keep_outline: bool) -> None
     )
     print(
         f"正文     ：第 {layout.body_page}-{layout.body_end_page} 页"
-        f"（{layout.body_pages} 页，书签“第1页”…“第{layout.body_pages}页”）"
+        f"（{layout.body_pages} 页，书签“1”…“{layout.body_pages}”）"
     )
-    print(f"新增书签 ：{plan.generated_count} 条")
+    print(
+        f"新增书签 ：{plan.generated_count} 条"
+        f"（1 条“目录” + {layout.body_pages} 条正文页码）"
+    )
     if info.has_outline:
         if keep_outline:
             print(f"原有书签 ：保留（{len(plan.existing_outline)} 条，追加在末尾）")
         else:
             print("原有书签 ：将被替换")
     print(
-        "页码标签 ：写入（目录 1…；正文 1…）"
+        "页码标签 ：写入（前置 A…/i…；目录 i…；正文 1…）"
         if plan.write_page_labels
         else "页码标签 ：不写入"
     )
@@ -781,7 +914,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"当前共 {result.total_bookmarks} 条书签。"
             )
             if result.page_labels_written:
-                print("已写入页码标签：目录页显示“目录 1…”；正文页显示 1…N。")
+                print("已写入页码标签：前置页 A…/i…，目录页 i…，正文页 1…N。")
             if result.backup_path is not None:
                 print(f"备份：{result.backup_path}")
         return 0

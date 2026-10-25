@@ -38,7 +38,7 @@ def test_analyze_pdf(pdf_factory):
     assert info.has_outline is True
 
 
-def test_process_creates_grouped_bookmarks_and_labels(pdf_factory):
+def test_process_creates_flat_bookmarks_and_normalized_labels(pdf_factory):
     path = pdf_factory(pages=12)
 
     result = process_pdf(path, 3, 5)
@@ -48,8 +48,8 @@ def test_process_creates_grouped_bookmarks_and_labels(pdf_factory):
     assert result.body_page == 5
     assert result.toc_pages == 2
     assert result.body_pages == 8
-    assert result.generated_bookmarks == 12  # 1 toc + 2 toc children + 1 body + 8 pages
-    assert result.total_bookmarks == 12
+    assert result.generated_bookmarks == 9  # one 目录 + 8 body pages
+    assert result.total_bookmarks == 9
     assert result.page_labels_written is True
     assert result.dry_run is False
     assert result.backup_path is None
@@ -57,33 +57,51 @@ def test_process_creates_grouped_bookmarks_and_labels(pdf_factory):
     with fitz.open(path) as doc:
         assert doc.page_count == 12
         expected = [[1, "目录", 3]]
-        expected += [[2, "目录 1", 3], [2, "目录 2", 4]]
-        expected += [[1, "正文", 5]]
-        expected += [[2, f"第{i}页", 4 + i] for i in range(1, 9)]
+        expected += [[1, str(i), 4 + i] for i in range(1, 9)]
         assert toc(doc) == expected
 
         labels = doc.get_page_labels()
-        assert [item["startpage"] for item in labels] == [2, 4]
-        assert labels[0]["style"] == "D"
-        # /P must be a standards-compliant UTF-16BE text string with BOM.
-        raw = doc.xref_get_key(doc.pdf_catalog(), "PageLabels")[1]
-        assert "FEFF76EE5F550020" in raw  # "目录 " in UTF-16BE
+        # A, B for front matter; i, ii for the TOC; 1..8 for the body.
+        assert [item["startpage"] for item in labels] == list(range(12))
+        assert [item["prefix"] for item in labels] == [
+            "A",
+            "B",
+            "i",
+            "ii",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+        ]
+        assert all(item.get("style", "") == "" for item in labels)
+        assert doc[0].get_label() == "A"
+        assert doc[2].get_label() == "i"
         assert doc[4].get_label() == "1"
-        assert doc[5].get_label() == "2"
         assert doc[11].get_label() == "8"
 
     assert not list(path.parent.glob(".pupdf-*"))
 
 
-def test_single_toc_page_has_no_redundant_child(pdf_factory):
+def test_single_toc_page_has_one_toc_bookmark(pdf_factory):
     path = pdf_factory(pages=5)
     process_pdf(path, 2, 3)
     with fitz.open(path) as doc:
-        assert toc(doc)[:2] == [[1, "目录", 2], [1, "正文", 3]]
-        assert toc(doc)[2:] == [
-            [2, "第1页", 3],
-            [2, "第2页", 4],
-            [2, "第3页", 5],
+        assert toc(doc) == [
+            [1, "目录", 2],
+            [1, "1", 3],
+            [1, "2", 4],
+            [1, "3", 5],
+        ]
+        assert [label["prefix"] for label in doc.get_page_labels()] == [
+            "A",
+            "i",
+            "1",
+            "2",
+            "3",
         ]
 
 
@@ -93,7 +111,7 @@ def test_existing_outline_is_replaced_by_default(pdf_factory):
     with fitz.open(path) as doc:
         titles = [entry[1] for entry in toc(doc)]
     assert "Preface" not in titles
-    assert titles[:2] == ["目录", "正文"]
+    assert titles == ["目录", "1", "2", "3", "4", "5"]
 
 
 def test_existing_outline_can_be_kept(pdf_factory):
@@ -103,7 +121,8 @@ def test_existing_outline_can_be_kept(pdf_factory):
         entries = toc(doc)
     assert entries[:2] == [[1, "Preface", 1], [2, "Chapter", 2]]
     assert entries[2] == [1, "目录", 3]
-    assert entries[3] == [1, "正文", 4]
+    assert entries[3] == [1, "1", 4]
+    assert entries[-1] == [1, "5", 8]
 
 
 def test_plan_exposes_final_outline_and_labels(pdf_factory):
@@ -112,8 +131,18 @@ def test_plan_exposes_final_outline_and_labels(pdf_factory):
     assert plan.layout.toc_pages == 1
     assert plan.layout.body_pages == 5
     assert plan.final_outline[0].title == "Old"
-    assert plan.generated_count == 7
-    assert [rule["startpage"] for rule in plan.page_labels] == [2, 3]
+    assert plan.generated_count == 6  # 目录 + 5 body pages
+    assert [rule["startpage"] for rule in plan.page_labels] == list(range(8))
+    assert [rule["prefix"] for rule in plan.page_labels] == [
+        "A",
+        "B",
+        "i",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+    ]
 
 
 def test_page_labels_can_be_disabled(pdf_factory):
@@ -150,10 +179,13 @@ def test_operation_is_idempotent_when_replacing_outline(pdf_factory):
     process_pdf(path, 2, 4)
     with fitz.open(path) as doc:
         first = toc(doc)
+        first_labels = doc.get_page_labels()
     process_pdf(path, 2, 4)
     with fitz.open(path) as doc:
         second = toc(doc)
+        second_labels = doc.get_page_labels()
     assert first == second
+    assert first_labels == second_labels
 
 
 @pytest.mark.parametrize(
@@ -247,8 +279,16 @@ def test_execute_plan_from_prebuilt_plan(pdf_factory):
     result = execute_plan(plan)
     assert result.body_pages == 4
     with fitz.open(path) as doc:
-        assert doc[3].get_label()  # a label exists at the TOC start
+        assert doc[3].get_label() == "i"
+        assert doc[4].get_label() == "ii"
         assert doc[5].get_label() == "1"
+        assert [entry[1] for entry in toc(doc)] == [
+            "目录",
+            "1",
+            "2",
+            "3",
+            "4",
+        ]
 
 
 def test_saving_preserves_page_count_and_metadata(pdf_factory):
@@ -271,3 +311,74 @@ def test_unwritable_temp_location_has_friendly_error(pdf_factory, monkeypatch):
         process_pdf(path, 2, 3)
 
     assert path.read_bytes() == original
+
+
+def test_front_matter_labels_are_normalized_by_existing_style(pdf_factory):
+    path = pdf_factory(
+        pages=12,
+        page_labels=[
+            {"startpage": 0, "prefix": "cov", "style": "", "firstpagenum": 1},
+            {"startpage": 1, "prefix": "A", "style": "", "firstpagenum": 1},
+            {"startpage": 2, "prefix": "", "style": "r", "firstpagenum": 1},
+            {"startpage": 3, "prefix": "ii", "style": "", "firstpagenum": 1},
+            {"startpage": 4, "prefix": "", "style": "r", "firstpagenum": 1},
+            {"startpage": 6, "prefix": "001", "style": "", "firstpagenum": 1},
+        ],
+    )
+
+    process_pdf(path, 5, 7)
+
+    with fitz.open(path) as doc:
+        assert [label["prefix"] for label in doc.get_page_labels()] == [
+            "A",
+            "B",
+            "i",
+            "ii",
+            "iii",
+            "iv",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+        ]
+        assert toc(doc) == [
+            [1, "目录", 5],
+            [1, "1", 7],
+            [1, "2", 8],
+            [1, "3", 9],
+            [1, "4", 10],
+            [1, "5", 11],
+            [1, "6", 12],
+        ]
+
+
+def test_letters_and_roman_helpers():
+    assert core._to_letters(0) == "A"
+    assert core._to_letters(25) == "Z"
+    assert core._to_letters(26) == "AA"
+    assert core._to_letters(27) == "AB"
+    assert core._to_roman(1) == "i"
+    assert core._to_roman(4) == "iv"
+    assert core._to_roman(9) == "ix"
+    assert core._to_roman(14) == "xiv"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "style", "expected"),
+    [
+        ("A", "", "letter"),
+        ("cov", "", "letter"),
+        ("i", "", "roman"),
+        ("iv", "", "roman"),
+        ("II", "", "roman"),
+        ("I", "", "roman"),
+        ("!", "", "roman"),
+        ("封面", "", "letter"),
+        ("", "r", "roman"),
+        ("", "A", "letter"),
+    ],
+)
+def test_classify_front_label(prefix, style, expected):
+    assert core._classify_front_label(prefix, style) == expected
