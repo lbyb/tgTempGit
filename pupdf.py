@@ -415,7 +415,8 @@ def _page_labels_for_layout(
 
     labels: list[dict] = []
     letter_number = 0
-    roman_number = 0
+    front_roman_number = 0
+    toc_roman_number = 0
     body_number = 1
 
     for page in range(1, layout.total_pages + 1):
@@ -425,14 +426,16 @@ def _page_labels_for_layout(
                 front_label_kinds[index] if index < len(front_label_kinds) else "letter"
             )
             if kind == "roman":
-                roman_number += 1
-                prefix = _to_roman(roman_number)
+                front_roman_number += 1
+                prefix = _to_roman(front_roman_number)
             else:
                 letter_number += 1
                 prefix = _to_letters(letter_number - 1)
         elif page < layout.body_page:
-            roman_number += 1
-            prefix = _to_roman(roman_number)
+            # The TOC always starts at i, independent of any Roman-numbered
+            # front matter, so the required i/ii/iii sequence is guaranteed.
+            toc_roman_number += 1
+            prefix = _to_roman(toc_roman_number)
         else:
             prefix = str(body_number)
             body_number += 1

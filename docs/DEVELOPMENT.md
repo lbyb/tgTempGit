@@ -77,7 +77,7 @@ uv 可以下载受管理的 Python，PyMuPDF 使用官方 Windows wheel。
   - 无法判断时默认按字母处理。
 - 页码标签由 `_page_labels_for_layout` 生成：
   - 字母计数与正文数字独立；
-  - 罗马计数在“前置页罗马标记 + 目录页”之间连续；
+  - 目录页的罗马计数始终从 i 开始；
   - 每页生成 `{'startpage': i, 'prefix': ..., 'style': '', 'firstpagenum': 1}`，
     避免旧 style 继续自动拼接数字。
 - 写入流程：内存修改 → 同目录隐藏临时文件 → 关闭原文档 → 重新打开校验
@@ -180,13 +180,13 @@ uv run --with pytest --with pymupdf==1.24.14 pytest -q
 
 ```text
 ..........................................................               [100%]
-58 passed
+59 passed
 ```
 
 Python 3.13 也通过了同一套测试：
 
 ```text
-58 passed in 4.04s
+59 passed in 4.24s
 ```
 
 ### 6.3 端到端 PDF 验证

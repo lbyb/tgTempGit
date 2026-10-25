@@ -334,8 +334,8 @@ def test_front_matter_labels_are_normalized_by_existing_style(pdf_factory):
             "B",
             "i",
             "ii",
-            "iii",
-            "iv",
+            "i",
+            "ii",
             "1",
             "2",
             "3",
@@ -352,6 +352,37 @@ def test_front_matter_labels_are_normalized_by_existing_style(pdf_factory):
             [1, "5", 11],
             [1, "6", 12],
         ]
+
+
+def test_requested_bookmark_and_label_contract(pdf_factory):
+    """The four explicit requirements: jump targets, names and prefixes."""
+
+    path = pdf_factory(pages=12)
+    process_pdf(path, 3, 7)
+
+    with fitz.open(path) as doc:
+        outline = toc(doc)
+
+        # 1. Exactly one 目录 bookmark, pointing at the given TOC page.
+        assert outline[0] == [1, "目录", 3]
+        assert [entry[1] for entry in outline].count("目录") == 1
+
+        # 2. Body bookmarks are 1..N, unique, no padding, no extra text.
+        body_titles = [entry[1] for entry in outline[1:]]
+        assert body_titles == [str(number) for number in range(1, 7)]
+        assert len(body_titles) == len(set(body_titles))
+        assert [entry[2] for entry in outline[1:]] == list(range(7, 13))
+
+        labels = doc.get_page_labels()
+        # 3. Every TOC page prefix is i, ii, iii, iv...
+        assert [label["prefix"] for label in labels[2:6]] == [
+            "i",
+            "ii",
+            "iii",
+            "iv",
+        ]
+        # 4. Body prefixes are identical to the body bookmark titles.
+        assert [label["prefix"] for label in labels[6:]] == body_titles
 
 
 def test_letters_and_roman_helpers():
